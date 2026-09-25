@@ -3,3 +3,6 @@ Routing which agent to use for a task or which model to use to reduce token spen
 Using Jev as a judge for LLM
 
 Training Jev to play a game
+- Tetris 
+- blackjack (use 3110 project)
+
