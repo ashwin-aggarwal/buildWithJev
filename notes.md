@@ -29,6 +29,9 @@ A major architectural difference from autoregressive LLMs is that Jev evaluates 
 LLMs predict the next token but Jev predicts the next distribution, very very powerful
 Questions within one Jev request are evaluated independently against the same state.
 
+You would not use Jev to write code but just have it within your software. Jev should not be bigger than the program it should run internally and manage a small part of it like judging, ranking, verifying, classifying etc
+
+
 
 
 
