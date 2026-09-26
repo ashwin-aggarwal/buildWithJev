@@ -1,0 +1,35 @@
+You are building a character roster for a detective novel. The full text of the
+novel follows in the user message. Read all of it.
+
+List every named or consistently referred-to CHARACTER (a person) who appears
+or is mentioned in the story. Include minor characters, victims, servants,
+police, and people who are only talked about. Do not include places,
+organisations, or animals.
+
+For each character give:
+- "canonical": the fullest, most specific name the text uses for them
+  (e.g. "Alfred Inglethorp", not "Mr. Inglethorp").
+- "aliases": every OTHER exact string the text uses to refer to them by name or
+  fixed title, copied exactly as written, with the text's capitalisation
+  (e.g. "Mr. Inglethorp", "Alfred", "Inglethorp"). Include surnames alone and
+  titles-with-surname. Do not include pronouns or generic descriptions
+  ("the man", "he"). Do not include the canonical name itself.
+- "evidence": an object mapping each alias to one short verbatim quote
+  (under 25 words) from the text in which that alias clearly refers to this
+  character.
+- "uncertain": true if you are not confident that the aliases really belong to
+  one person, or that this is a distinct person from another entry; otherwise
+  false.
+
+Rules:
+- One entry per person. If two names refer to the same person, merge them into
+  one entry. If a surname is shared by several people (e.g. two Inglethorps),
+  do NOT list the bare surname as an alias of either; list it nowhere.
+- An alias string must never appear under two different characters.
+- Do not reveal or guess who the culprit is. Do not add any fields other than
+  the ones above. Do not report where in the book anyone appears.
+
+Respond with ONLY a JSON object, no prose and no code fences, in exactly this
+shape:
+
+{"characters": [{"canonical": "...", "aliases": ["..."], "evidence": {"alias": "quote"}, "uncertain": false}]}

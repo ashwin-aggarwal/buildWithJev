@@ -37,9 +37,14 @@ TYPESAFE_KEY_ENV: str = "TYPESAFE_API_KEY"
 # USD per 1,000,000 input tokens. Output tokens are free.
 PRICE_PER_1M_INPUT_TOKENS: float = 0.042
 
-# Max input length in tokens. If the longest prefix (paragraphs 1..N + the
-# question + choices) exceeds this, the run will fail on later paragraphs.
+# Jev 1.13 limits (docs.typesafe.ai/models, checked 2026-09-25): "64k tokens per
+# request; 32k tokens for `state` plus the longest question". So
+# MAX_INPUT_TOKENS bounds state + the single longest question, and
+# MAX_REQUEST_TOKENS bounds state + ALL questions in a batched call.
 MAX_INPUT_TOKENS: int = 32_000
+MAX_REQUEST_TOKENS: int = 64_000
+MAX_CHOICE_OPTIONS: int = 255
+MAX_SCORE_LEVELS: int = 10
 
 # --- Client behaviour -------------------------------------------------------
 
@@ -55,7 +60,59 @@ DATA_DIR: Path = PROJECT_ROOT / "data"
 RAW_DIR: Path = DATA_DIR / "raw"            # downloaded texts (gitignored)
 PARSED_DIR: Path = DATA_DIR / "parsed"      # paragraphs JSON (tracked)
 RESULTS_DIR: Path = DATA_DIR / "results"    # per-run JSONL (tracked)
-CACHE_DIR: Path = PROJECT_ROOT / ".cache" / "jev"  # hashed responses (gitignored)
+CACHE_DIR: Path = PROJECT_ROOT / ".cache" / "jev"  # legacy per-file cache dir (gitignored)
+JEV_CACHE_DB: Path = PROJECT_ROOT / ".cache" / "jev.sqlite"  # every Jev call (gitignored)
+EXTRACT_CACHE_DIR: Path = PROJECT_ROOT / ".cache" / "extract"  # Anthropic roster calls
+
+# Ledger pipeline (ingestion -> chunks -> roster -> ledger). See CLAUDE.md.
+HTML_CACHE_DIR: Path = RAW_DIR / "html"     # raw HTML keyed by URL hash (gitignored)
+BOOKS_DIR: Path = DATA_DIR / "books"        # {book_id}.json.gz
+LEDGERS_DIR: Path = DATA_DIR / "ledgers"    # {book_id}.json.gz + per-run post-hoc sidecars
+ROSTERS_DIR: Path = DATA_DIR / "rosters"    # {book_id}.yaml, hand-editable, authoritative
+# Answer key. ONLY detective_jev.scoring may read this; nothing that builds Jev
+# state may touch it (enforced by tests/test_answer_isolation.py).
+ANSWERS_DIR: Path = DATA_DIR / "answers"
+MANIFEST_PATH: Path = DATA_DIR / "manifest.parquet"
+PARQUET_DIR: Path = RESULTS_DIR / "parquet"  # derived, disposable (gitignored)
+QUESTIONS_DIR: Path = PROJECT_ROOT / "config"
+COMPRESSION_QUESTIONS_PATH: Path = QUESTIONS_DIR / "compression_questions.yaml"
+INFERENCE_QUESTIONS_PATH: Path = QUESTIONS_DIR / "inference_questions.yaml"
+PROMPTS_DIR: Path = PROJECT_ROOT / "prompts"
+EXTRACT_PROMPT_PATH: Path = PROMPTS_DIR / "extract_characters.txt"
+
+# Bump whenever parsing/chunking/segmentation changes; stamped into every artifact.
+PIPELINE_VERSION: str = "1"
+
+# Words per chunk. Chunks accumulate whole paragraphs until they reach this.
+CHUNK_SIZE_TARGET: int = int(os.getenv("CHUNK_SIZE_TARGET", "500"))
+
+# Rendered inference state (ledger 1..t-1 + chunk t) above this many tokens
+# triggers a rollup of the oldest entries. Leaves headroom under
+# MAX_INPUT_TOKENS for the longest question.
+LEDGER_TOKEN_BUDGET: int = int(os.getenv("LEDGER_TOKEN_BUDGET", "26000"))
+
+# Write book/ledger JSON uncompressed (for debugging). Readers handle both.
+WRITE_UNCOMPRESSED: bool = os.getenv("WRITE_UNCOMPRESSED", "0") == "1"
+
+# Optional: after each inference step, write contradicts_prior for chunk t into
+# a per-run sidecar so later steps' rendered state carries it. Off by default.
+POSTHOC_CONTRADICTIONS: bool = os.getenv("POSTHOC_CONTRADICTIONS", "0") == "1"
+
+# Roster validation: a capitalised token seen at least this often that matches
+# no alias is flagged as a possibly missed character.
+MISSED_NAME_MIN_COUNT: int = 8
+
+# --- Character extraction (Anthropic, once per book) ------------------------
+
+ANTHROPIC_KEY_ENV: str = "ANTHROPIC_API_KEY"
+EXTRACTION_MODEL: str = os.getenv("EXTRACTION_MODEL", "claude-sonnet-5")
+EXTRACTION_CONTEXT_TOKENS: int = 1_000_000  # claude-sonnet-5 context window
+EXTRACTION_MAX_OUTPUT_TOKENS: int = 32_000
+
+
+def anthropic_api_key() -> str | None:
+    """The Anthropic key from the environment. Never log or print the value."""
+    return os.getenv(ANTHROPIC_KEY_ENV) or None
 
 # Token counting is approximate: Jev's exact tokenizer is not published, so we
 # use tiktoken's cl100k_base as a proxy for pre-run estimates. Real token

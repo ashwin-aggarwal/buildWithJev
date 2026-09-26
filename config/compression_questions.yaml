@@ -1,0 +1,74 @@
+# COMPRESSION questions: asked ONCE per chunk, all in ONE batched Jev call, with
+# state = that chunk's raw text and nothing else. The answers become the
+# chunk's ledger entry, so every question here must be answerable from the
+# chunk alone (scope: chunk_local). The loader rejects anything else.
+# Anything that needs earlier chunks belongs in inference_questions.yaml.
+#
+# Editing this file changes the ledger's questions hash: existing ledgers are
+# then refused until rebuilt with `cli ledger <book_id> --force`.
+#
+# Known caveats (kept as specified; change only by decision):
+#   - event_type options `alibi_broken` and `misdirection` arguably need
+#     history (broken relative to an earlier alibi; misdirection is only
+#     knowable in hindsight).
+#   - new_evidence's "new" is judged within the chunk only.
+
+scope: chunk_local
+questions:
+  - id: concerns
+    scope: chunk_local
+    type: choice
+    text: "Which character does this passage primarily concern?"
+    options: roster
+    extra_options: [none, multiple]
+
+  - id: secondary
+    scope: chunk_local
+    type: choice
+    text: "Which character, other than the one this passage primarily concerns, does it concern most?"
+    options: roster
+    extra_options: [none]
+
+  - id: event_type
+    scope: chunk_local
+    type: choice
+    text: "What kind of event mainly happens in this passage of a detective story?"
+    options: [discovery, testimony, accusation, alibi_claim, alibi_broken,
+              physical_evidence, movement, background, misdirection, none]
+
+  - id: new_evidence
+    scope: chunk_local
+    type: noul
+    text: "Does this passage present a piece of evidence or a clue relevant to the crime?"
+
+  - id: time_reference
+    scope: chunk_local
+    type: noul
+    text: "Does this passage state or clearly imply a specific time or time of day at which something happened?"
+
+  - id: location_stated
+    scope: chunk_local
+    type: noul
+    text: "Does this passage state a specific place where a character was or where something happened?"
+
+  # One Score per character (full roster), all in the same single call.
+  # Level 1 doubles as "absent": characters not in the passage should get 1.
+  - id: suspicion
+    scope: chunk_local
+    type: score
+    per_character: true
+    text: "How suspicious is {name}'s behaviour in this passage?"
+    levels:
+      - "Absent from this passage, or nothing suspicious about their behaviour in it"
+      - "Slightly odd or evasive behaviour, easily explained"
+      - "Noticeably suspicious: a lie, a gap, or a motive surfaces"
+      - "Strongly suspicious: behaviour points toward guilt"
+      - "Extremely suspicious: behaviour nearly implicates them in the crime"
+
+  # Jev picks one numbered sentence; code copies that exact sentence into the
+  # entry as key_quote. This is how verbatim text survives compression.
+  - id: key_sentence
+    scope: chunk_local
+    type: choice
+    text: "Which sentence in this passage matters most for working out who committed the crime?"
+    options: sentences
