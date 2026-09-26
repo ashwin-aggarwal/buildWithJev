@@ -48,21 +48,37 @@ signatures, grep for every caller (`webapp.py`, `run_curve.py`, `viz/index.html`
 
 ```
 src/detective_jev/
-  config.py        model id, endpoints, MAX_INPUT_TOKENS=32000, price, paths
-  jev_client.py    query(): retries+backoff, timeout, on-disk cache, mock mode
+  config.py        model id, endpoints, Jev limits, price, paths, ledger settings
+  jev_client.py    query_batch() + query() wrapper: retries, SQLite cache, mock, shuffle
   tokens.py        approximate token counting (tiktoken cl100k_base proxy)
   story.py         download + parse Gutenberg text -> ordered paragraphs
   friend_stubs.py  build_choices / build_question / build_context   <-- ACTIVE WORK
   webapp.py        Flask: serves the page + /api/solve SSE live stream
+  --- ledger pipeline (see "Ledger pipeline" below) ---
+  ingest.py        HTML URL -> paragraphs + chapter headings -> data/books/
+  chunking.py      ~500-word whole-paragraph chunks + sentence segmentation
+  roster.py        character roster (one Anthropic call per book) + validation
+  questions.py     loads config/*_questions.yaml, enforces scope, resolves options
+  ledger.py        compression: one batched Jev call per chunk -> append-only ledger
+  render.py        render_ledger(): pure ledger -> state text; compose_state()
+  inference.py     per-step state (ledger 1..t-1 + chunk t) + one batched call
+  storage.py       gzip JSON helpers, paths, manifest.parquet
+  cli.py           python -m detective_jev.cli ingest|roster|validate|ledger|list|inspect
+  scoring/         ONLY place that reads data/answers/ (answer key) + Parquet converter
+config/            compression_questions.yaml (chunk_local), inference_questions.yaml (history_aware)
+prompts/           extract_characters.txt (roster extraction prompt)
+tests/             pytest suite (all mock; `uv run pytest`)
 viz/index.html     live demo frontend (dark UI, SVG bar race + Whodunit Curve)
 scripts/
   serve.py         launch the live demo website (http://127.0.0.1:8000)
   smoke_test.py    ONE real call to verify key + billing
   estimate_cost.py pre-run token + $ estimate; flags 32k prefix overflow
-  run_curve.py     batch orchestrator -> results JSONL (resumable via cache)
+  run_curve.py     batch orchestrator -> results JSONL (resumable); --book = ledger mode
+  results_to_parquet.py  book-mode JSONL -> long Parquet (derived, disposable)
 data/
   raw/ (gitignored)  parsed/<name>.json   results/<name>.jsonl
-.cache/jev/        hashed response cache (gitignored) — reruns are free
+  books/ ledgers/ rosters/ answers/ manifest.parquet   (ledger pipeline)
+.cache/jev.sqlite  every Jev call, keyed by exact request (gitignored) — reruns are free
 notes.md project_ideas skill.md TestingJev.ipynb   # original research/notes
 ```
 
@@ -73,8 +89,10 @@ notes.md project_ideas skill.md TestingJev.ipynb   # original research/notes
 - **Parsed story:** `data/parsed/<name>.json` = `[{"index": i, "text": "..."}]`.
 - **Results row (JSONL):** `{t, answer, probabilities, confidence, latency_ms,
   input_tokens, model, cost, cached, timestamp}` — one per paragraph.
-- **Cache key:** SHA-256 of (model id, context, question, choices). Interrupted
-  runs resume; identical calls never re-bill.
+- **Cache:** SQLite at `.cache/jev.sqlite`, key = SHA-256 of (model, provider,
+  state, questions, Choice options IN THE ORDER SENT). Interrupted runs resume;
+  identical calls never re-bill. (The old per-file `.cache/jev/*.json` cache is
+  no longer read.)
 - **Model is pinned** (`typesafe/jev-1.13`) and the resolved dated build id is
   logged in every result's `model` field.
 
@@ -86,7 +104,15 @@ notes.md project_ideas skill.md TestingJev.ipynb   # original research/notes
   (The original `TestingJev.ipynb` uses a third path: the `langchain_typesafe`
   SDK with a `TYPESAFE_API_KEY`.)
 - **Model id:** `typesafe/jev-1.13` (responses echo e.g. `typesafe/jev-1.13-20260917`).
-- **Pricing:** $0.042 / 1M input tokens; output free. **Context limit: 32,000 tokens.**
+- **Pricing:** $0.042 / 1M input tokens; output free.
+- **Limits (docs.typesafe.ai/models):** "64k tokens per request; 32k tokens for
+  `state` plus the longest question." So `MAX_INPUT_TOKENS=32000` bounds state +
+  the single longest question and `MAX_REQUEST_TOKENS=64000` bounds state + ALL
+  questions. No documented cap on the number of questions per request; ≤255
+  options per Choice; 2–10 levels per Score. Rate limit 1,200 req/min.
+  (These are TypeSafe-native numbers; OpenRouter publishes none of its own.)
+- **Score is 0-indexed** in responses (`probabilities: {"0": p, ...}`); the client
+  converts to 1-indexed.
 - **Request:**
   ```json
   {"model": "...", "state": "<context>",
@@ -105,15 +131,37 @@ notes.md project_ideas skill.md TestingJev.ipynb   # original research/notes
 from detective_jev import query
 r = query(context_text, question, choices, mock=False, use_cache=True)
 # choices: list[str] OR {option: description|None}
-# r -> {answer, confidence, probabilities, raw_response, latency_ms,
-#       input_tokens, model, cost, cached, mock}
+# r -> {answer, confidence, probabilities, option_order, raw_response,
+#       latency_ms, input_tokens, model, cost, cached, mock}
+
+from detective_jev.jev_client import query_batch
+r = query_batch(state, [
+    {"id": "who", "type": "choice", "instructions": "...", "criteria": {"a": None, "b": "desc"}},
+    {"id": "sev", "type": "score",  "instructions": "...", "criteria": ["low", "mid", "high"]},
+    {"id": "yes", "type": "noul",   "instructions": "...", "criteria": None},
+], mock=False, use_cache=True)
+# r["answers"][qid] -> {type, value, prob, distribution, confidence, option_order[, expected]}
+#   choice: value = winner, distribution = {option: p}
+#   score:  value = most probable level 1..N, expected = weighted level, distribution {"1": p, ...}
+#   noul:   value = p >= 0.5, prob = p, distribution {"true": p, "false": 1-p}
+# r also has option_order {qid: [...]}, latency_ms, input_tokens, model, cost, cached, mock
 ```
+
+`query()` is a thin wrapper over `query_batch()` (one code path; retries live in
+`_post()`). Both **shuffle Choice option order per call** with a seed from
+(state, question id, option set): randomised across calls, reproducible for the
+same call, and returned as `option_order`. Score levels are never shuffled.
+Both refuse (`JevBudgetError`) instead of truncating when a request would exceed
+the limits above.
 
 ## The stubs you implement (`friend_stubs.py`)
 
 - `build_choices(paragraphs) -> {suspect: desc|None}` — the fixed suspect set
-  (stable across all `t` so distributions are comparable).
-- `build_question() -> str` — the Choice question text.
+  (stable across all `t` so distributions are comparable). Paragraph mode still
+  returns placeholder suspects, **plus the culprit question's `extra_options`
+  (`none_of_these`) from config.** Book mode builds options from the roster.
+- `build_question() -> str` — the Choice question text. **Now reads the `culprit`
+  question's `text` from `config/inference_questions.yaml`.**
 - `build_context(paragraphs, t) -> str` — the `state` for step `t`. **This is
   where compression lives:** once the `1..t` prefix nears the 32k limit,
   trim/summarize earlier paragraphs here. `estimate_cost.py` flags the first `t`
@@ -128,7 +176,147 @@ uv run python scripts/estimate_cost.py data/parsed/<name>.json    # cost first
 uv run python scripts/serve.py                                    # live demo (mock default)
 uv run python scripts/run_curve.py data/parsed/<name>.json --mock # batch dry run
 uv run python scripts/smoke_test.py                              # ONE real call (needs key)
+uv run pytest                                                     # test suite (mock only)
 ```
 
 See `SETUP.md` for account/key/billing steps (waitlist, OpenRouter key, credits,
 spending limit).
+
+## Ledger pipeline (added 2026-09-25 by the friend's Claude session)
+
+Why: Jev's 32K limit means growing prefixes of a whole novel can't fit. Each
+~500-word chunk is compressed ONCE into a structured **ledger entry** built only
+from Jev's typed answers plus one verbatim sentence Jev selects. No LLM writes
+prose anywhere in the reading loop.
+
+### Two Jev call sites (the core invariant)
+
+1. **Compression** (`ledger.py`): state = the raw text of ONE chunk, nothing
+   else. Exactly one batched `query_batch()` call per chunk with every question
+   in `config/compression_questions.yaml` (`scope: chunk_local`). A pure function
+   of (chunk text, its sentences, roster, questions). One entry per chunk index;
+   appending an existing index raises `DuplicateEntryError`; a persisted
+   per-book counter raises `CompressionCallBudgetError` if calls would exceed
+   the chunk count.
+2. **Inference** (`inference.py`): state at step t = `CASE NOTES` (rendered
+   entries **1..t-1**) + `CURRENT PASSAGE` (chunk t raw). Chunk t is never in the
+   notes at step t. One batched call per step with every question in
+   `config/inference_questions.yaml` (`scope: history_aware`). Answers go to
+   **results rows only**, never into ledger entries.
+
+Each loader rejects the other scope, and `options: candidates` is rejected in
+compression (the ledger must not depend on the run condition). Current split:
+- compression: `concerns`, `secondary` (roster + none/multiple), `event_type`,
+  `new_evidence`, `time_reference`, `location_stated` (Noul), per-character
+  `suspicion` Score 1–5 over the FULL roster (level 1 = "absent, or nothing
+  suspicious"), `key_sentence` (Choice over the chunk's numbered sentences;
+  code copies the sentence verbatim into `key_quote`).
+- inference: `culprit` (Choice over candidates + `none_of_these`; required),
+  `contradicts_prior` (Noul), `alibi_effect` (moved from compression).
+- Known, deliberately kept caveats are commented in the YAML (`event_type`'s
+  `alibi_broken`/`misdirection` options and `new_evidence` arguably need
+  history). Moving further questions is the friend's decision.
+
+### Entry shape (`data/ledgers/{book_id}[.mock].json.gz`)
+
+```
+{"chunk", "chapter", "word_span",                      # positional
+ "answers": {qid: {type, value, prob, distribution, confidence[, expected]}},
+ "suspicion": {canonical: {value 1-5, expected, prob, distribution}},
+ "mentioned": {canonical: bool},                       # alias match in code
+ "key_quote", "key_sentence_idx" (0-based), "option_order": {qid: [...]},
+ "text_sha256"}
+```
+The ledger file also records `roster_hash` (names + aliases only),
+`questions_hash`, `book_text_sha256`, `pipeline_version`, `compression_calls`,
+`rollups`. A mismatch refuses to append until `cli ledger <id> --force`.
+Editing `is_suspect` never invalidates a ledger. **Mock ledgers are separate
+files** (`<id>.mock.json.gz`) so a dry run can never stand in for a real one.
+
+### Rendering and overflow
+
+`render.render_ledger(entries, roster, rollups=, suspects=, posthoc=)` is pure
+and lives alone so the format can change without touching extraction. Only
+suspicion values ≥ 2 and true Nouls are printed, to stay compact. Before each
+inference call, `ledger.ensure_rollups` counts the tokens of the full-cast state.
+Over `LEDGER_TOKEN_BUDGET` (26K), it rolls up the oldest chapter's entries into
+per-chapter event counts plus the key quotes where `new_evidence` was true. Each rollup
+stores `triggered_at_t` and is shown only from that step on (no lookahead),
+covers each entry at most once, and is logged. Arithmetic: at ~70–115
+tokens/entry a 90K-word book (180 chunks) renders to ~12–21K tokens, so rollups
+never fire. They start at about 114K–194K words (*The Moonstone*, *The Woman in
+White*). Rollups use only `new_evidence`, not `contradicts_prior`, which is now
+run-specific.
+
+### Candidate sets, run ids, post-hoc
+
+- `candidate_set` is a run condition: `full_cast` | `suspects_only` (roster
+  `is_suspect: true`). The ledger is built once for the full cast;
+  `suspects_only` narrows the culprit options and filters the rendered
+  suspicion lines. That is exact, because Jev evaluates each Score independently.
+- `run_id` = deterministic hash of (book, model, provider, ledger entries,
+  inference questions, candidate_set, condition, mock, posthoc). Book-mode
+  results go to `data/results/{book_id}__{run_id}.jsonl` so conditions never
+  collide on resume.
+- `--posthoc` (default off, `POSTHOC_CONTRADICTIONS=1`) writes each step's
+  `contradicts_prior` into a **per-run sidecar**
+  `data/ledgers/{book_id}.posthoc.{run_id}.json.gz`. It is rendered in later
+  steps of that run only. The shared ledger is never modified.
+
+### Results rows (book mode) — existing fields unchanged, fields ADDED
+
+`{t, answer, probabilities, confidence, latency_ms, input_tokens, model, cost,
+cached, timestamp}` (from the `culprit` answer) **+** `book_id, run_id, condition,
+candidate_set, inference_answers {qid: {...full distribution...}}, option_order
+{qid: [...]}`. Paragraph-mode rows are unchanged. `scripts/results_to_parquet.py`
+derives `data/results/parquet/{run_id}.parquet` (gitignored): one row per
+(t, candidate) with prob, is_culprit, introduced_by_t, option_position,
+q_<id>_value/prob. The file is regenerated whole each time and never edited in place.
+
+### Roster and answer key (kept separate on purpose)
+
+- `data/rosters/{id}.yaml`: hand-editable and **authoritative once it exists**;
+  after that the Anthropic API is never called for that book. It is extracted
+  once per book by `EXTRACTION_MODEL` (default `claude-sonnet-5`, key from
+  `ANTHROPIC_API_KEY` via `config.anthropic_api_key()`, never logged), using the
+  prompt in `prompts/extract_characters.txt`. The response is cached by
+  normalised-text hash. Books too long for one call are refused (hand-write the
+  roster). `first_mention_chunk` is derived in code. Validation warnings cover
+  duplicate aliases, over-merges, and missed names.
+- `data/answers/{id}.yaml`: `is_culprit` only. **Only `detective_jev.scoring`
+  may read it.** `tests/test_answer_isolation.py` statically scans every
+  state-building module (incl. `webapp.py`, `friend_stubs.py`, `run_curve.py`)
+  and runs the whole mock pipeline with reads under `data/answers/` trapped.
+
+### What changed in existing files (minimal, shape-compatible)
+
+- `jev_client.py`: `query_batch()` added; `query()` rewritten as a wrapper
+  (same return keys + `option_order`); retries moved into `_post()`; SQLite cache
+  replaces the per-file cache; Choice order shuffling; token guard; mock covers
+  choice/score/noul.
+- `scripts/run_curve.py`: `parsed_path` is now optional; new `--book`,
+  `--candidate-set`, `--condition`, `--posthoc` book mode (`run_book()`). The
+  paragraph path is unchanged.
+- `friend_stubs.py`: `build_question()` / `build_choices()` read the culprit
+  question from config (see above). `build_context()` is unchanged.
+- `config.py`: limits clarified (`MAX_REQUEST_TOKENS` added), new paths,
+  `PIPELINE_VERSION`, `CHUNK_SIZE_TARGET`, `LEDGER_TOKEN_BUDGET`,
+  `WRITE_UNCOMPRESSED`, `POSTHOC_CONTRADICTIONS`, extraction settings.
+- `pyproject.toml`: pinned `beautifulsoup4`, `pyyaml`, `pandas`, `pyarrow`,
+  `anthropic`; `pytest` in the dev group. `.env.example`: `ANTHROPIC_API_KEY`.
+- `webapp.py`, `viz/index.html`, `estimate_cost.py`, `smoke_test.py`: **not
+  modified**. The webapp still runs paragraph mode; whether the frontend moves
+  to chunk/ledger steps is the frontend owner's call.
+
+### Ledger workflow
+
+```bash
+uv run python -m detective_jev.cli ingest <gutenberg_html_url>   # -> pg<N>
+uv run python -m detective_jev.cli roster pg<N>      # ONE paid Anthropic call unless the YAML exists
+#   hand-edit data/rosters/pg<N>.yaml: fix aliases, set is_suspect
+uv run python -m detective_jev.cli ledger pg<N>      # MOCK; add --real for paid Jev calls
+uv run python scripts/run_curve.py --book pg<N> --mock --candidate-set full_cast --condition v1
+uv run python scripts/results_to_parquet.py data/results/pg<N>__*.jsonl
+```
+Nothing in the ledger pipeline has made a real Jev or Anthropic call yet. All
+of it is tested in mock mode only (`uv run pytest`, 66 tests).

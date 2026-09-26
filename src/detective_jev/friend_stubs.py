@@ -22,6 +22,13 @@ let the whole pipeline run end-to-end in mock mode today, and produce a valid
 
 from __future__ import annotations
 
+from . import questions as _questions
+
+
+def _culprit_question() -> dict:
+    """The `culprit` question from config/inference_questions.yaml."""
+    return _questions.find(_questions.load_inference_questions(), "culprit")
+
 
 def build_choices(paragraphs: list[str]) -> dict[str, str | None]:
     """Build the suspect choice list for the whole story.
@@ -44,12 +51,17 @@ def build_choices(paragraphs: list[str]) -> dict[str, str | None]:
       - Whether to include a catch-all like "unknown"/"no one yet".
       - What descriptions (if any) help Jev disambiguate similar names.
     """
-    # --- placeholder so the pipeline runs; NOT the real design ---------------
-    return {
+    # Paragraph mode has no roster, so the suspects stay placeholders. Book mode
+    # (run_curve.py --book) builds culprit options from the roster instead.
+    # The culprit question's extra options (e.g. none_of_these) come from config.
+    choices: dict[str, str | None] = {
         "suspect_a": "Placeholder suspect A",
         "suspect_b": "Placeholder suspect B",
         "suspect_c": "Placeholder suspect C",
     }
+    extra = _culprit_question().get("extra_options", [])
+    choices.update(dict(extra) if isinstance(extra, dict) else {str(e): None for e in extra})
+    return choices
 
 
 def build_question() -> str:
@@ -61,8 +73,8 @@ def build_question() -> str:
     TODO(<friend>): Confirm the exact wording. This is prompt content and is
     yours to own; the placeholder is just a sensible default.
     """
-    # --- placeholder --------------------------------------------------------
-    return "Who is the killer?"
+    # The culprit question text lives in config/inference_questions.yaml.
+    return _culprit_question()["text"]
 
 
 def build_context(paragraphs: list[str], t: int) -> str:

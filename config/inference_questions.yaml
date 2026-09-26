@@ -1,0 +1,27 @@
+# INFERENCE questions: asked ONCE per timestep t, all in ONE batched Jev call,
+# with state = CASE NOTES (rendered ledger entries 1..t-1) + CURRENT PASSAGE
+# (chunk t, raw). Answers go to the results rows, never into ledger entries.
+# Every question here is scope: history_aware; the loader rejects anything else.
+#
+# `culprit` is required: it is the project's output and feeds the existing
+# answer / probabilities / confidence fields of each results row.
+
+scope: history_aware
+questions:
+  - id: culprit
+    scope: history_aware
+    type: choice
+    text: "Based on everything read so far, who committed the crime?"
+    options: candidates
+    extra_options: [none_of_these]
+
+  - id: contradicts_prior
+    scope: history_aware
+    type: noul
+    text: "Does the CURRENT PASSAGE contradict something recorded in the CASE NOTES from earlier passages?"
+
+  - id: alibi_effect
+    scope: history_aware
+    type: choice
+    text: "What does the CURRENT PASSAGE do to any character's alibi, compared with what the CASE NOTES record?"
+    options: [established, weakened, none]
