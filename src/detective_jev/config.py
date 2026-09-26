@@ -102,12 +102,30 @@ POSTHOC_CONTRADICTIONS: bool = os.getenv("POSTHOC_CONTRADICTIONS", "0") == "1"
 # no alias is flagged as a possibly missed character.
 MISSED_NAME_MIN_COUNT: int = 8
 
-# --- Character extraction (Anthropic, once per book) ------------------------
+# --- Character extraction (once per book) -----------------------------------
+
+# Which backend runs the one-per-book roster extraction call:
+#   "anthropic"  -> the Anthropic SDK (needs ANTHROPIC_API_KEY), EXTRACTION_MODEL
+#   "openrouter" -> OpenRouter chat completions (reuses OPENROUTER_API_KEY),
+#                   OPENROUTER_EXTRACTION_MODEL. Use this when you have no
+#                   Anthropic key but do have an OpenRouter key.
+EXTRACTION_PROVIDER: str = os.getenv("EXTRACTION_PROVIDER", "anthropic")
 
 ANTHROPIC_KEY_ENV: str = "ANTHROPIC_API_KEY"
 EXTRACTION_MODEL: str = os.getenv("EXTRACTION_MODEL", "claude-sonnet-5")
 EXTRACTION_CONTEXT_TOKENS: int = 1_000_000  # claude-sonnet-5 context window
 EXTRACTION_MAX_OUTPUT_TOKENS: int = 32_000
+
+# OpenRouter extraction path. A large-context model is required because the
+# whole novel goes in one request (a ~70k-word book is ~90k+ tokens).
+OPENROUTER_CHAT_URL: str = "https://openrouter.ai/api/v1/chat/completions"
+OPENROUTER_EXTRACTION_MODEL: str = os.getenv(
+    "OPENROUTER_EXTRACTION_MODEL", "deepseek/deepseek-v4-flash"
+)
+OPENROUTER_EXTRACTION_CONTEXT_TOKENS: int = int(
+    os.getenv("OPENROUTER_EXTRACTION_CONTEXT_TOKENS", "1000000")
+)
+OPENROUTER_EXTRACTION_MAX_OUTPUT_TOKENS: int = 16_000
 
 
 def anthropic_api_key() -> str | None:

@@ -134,28 +134,58 @@
 <body>
   <header>
     <h1>🕵 Detective JEV</h1>
-    <div class="sub">Paste a Project Gutenberg story link and watch JEV read it paragraph by paragraph, updating its guess for the killer in real time.</div>
+    <div class="sub">Pick an ingested book (real pipeline) or paste a Gutenberg link, and watch JEV read it passage by passage, updating its guess for the killer in real time.</div>
   </header>
 
   <div class="card">
     <div class="controls">
       <div class="row">
-        <label class="field" style="flex:1">Story URL (Gutenberg "Plain Text UTF-8")
-          <input id="url" type="text" list="presets"
-                 placeholder="https://www.gutenberg.org/files/863/863-0.txt"
-                 value="https://www.gutenberg.org/files/863/863-0.txt" />
-          <datalist id="presets">
-            <option value="https://www.gutenberg.org/files/863/863-0.txt" label="The Mysterious Affair at Styles — Christie"></option>
-            <option value="https://www.gutenberg.org/files/2852/2852-0.txt" label="The Hound of the Baskervilles — Doyle"></option>
-            <option value="https://www.gutenberg.org/files/1661/1661-0.txt" label="The Adventures of Sherlock Holmes — Doyle"></option>
-          </datalist>
+        <label class="field">Mode
+          <select id="mode" style="min-width:320px">
+            <option value="book">Book mode — ledger (the real pipeline)</option>
+            <option value="paragraph">Paragraph mode — URL (quick, naive concat)</option>
+          </select>
         </label>
       </div>
+
+      <!-- Book mode: pick an ingested book that has a ledger built. -->
+      <div id="bookControls">
+        <div class="row">
+          <label class="field" style="flex:1">Book (ingested + ledger built via the CLI)
+            <select id="book" style="min-width:320px"><option value="">Loading books…</option></select>
+          </label>
+          <label class="field">Suspect set
+            <select id="candidateSet">
+              <option value="full_cast">Full cast</option>
+              <option value="suspects_only">Suspects only</option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <!-- Paragraph mode: paste a Gutenberg plain-text URL (no compression). -->
+      <div id="paragraphControls" style="display:none">
+        <div class="row">
+          <label class="field" style="flex:1">Story URL (Gutenberg "Plain Text UTF-8")
+            <input id="url" type="text" list="presets"
+                   placeholder="https://www.gutenberg.org/files/863/863-0.txt"
+                   value="https://www.gutenberg.org/files/863/863-0.txt" />
+            <datalist id="presets">
+              <option value="https://www.gutenberg.org/files/863/863-0.txt" label="The Mysterious Affair at Styles — Christie"></option>
+              <option value="https://www.gutenberg.org/files/2852/2852-0.txt" label="The Hound of the Baskervilles — Doyle"></option>
+              <option value="https://www.gutenberg.org/files/1661/1661-0.txt" label="The Adventures of Sherlock Holmes — Doyle"></option>
+            </datalist>
+          </label>
+        </div>
+        <div class="row">
+          <label class="field">Suspects (optional, comma-separated)
+            <input id="suspects" type="text" placeholder="leave blank to use build_choices()" style="min-width:280px" />
+          </label>
+        </div>
+      </div>
+
       <div class="row">
-        <label class="field">Suspects (optional, comma-separated)
-          <input id="suspects" type="text" placeholder="leave blank to use build_choices()" style="min-width:280px" />
-        </label>
-        <label class="field">Max paragraphs
+        <label class="field">Max passages
           <input id="limit" type="number" value="40" min="1" max="200" style="width:90px" />
         </label>
         <label class="check" style="margin-top:16px"><input id="mock" type="checkbox" checked /> Mock mode (free — no real calls)</label>
@@ -176,7 +206,7 @@
       </div>
       <div class="stat"><span class="k">Leading suspect</span><span class="v" id="leading">—</span></div>
       <div class="stat"><span class="k">Confidence</span><span class="v" id="conf">—</span></div>
-      <div class="stat"><span class="k">Paragraph</span><span class="v" id="progress">—</span></div>
+      <div class="stat"><span class="k">Passage</span><span class="v" id="progress">—</span></div>
       <div class="stat"><span class="k">Cost so far</span><span class="v" id="cost">$0.000000</span></div>
       <div class="stat"><span class="k">Model</span><span class="v" id="model" style="font-size:13px">—</span></div>
     </div>
@@ -195,7 +225,12 @@
   </div>
 
   <div class="card">
-    <h2>The Whodunit Curve — belief over time</h2>
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:10px">
+      <h2 style="margin:0">The Whodunit Curve — belief over time</h2>
+      <label class="check" style="font-size:13px" title="Log y-axis spreads apart the crowded low-probability suspects">
+        <input id="logScale" type="checkbox" /> Log scale
+      </label>
+    </div>
     <div id="legend"></div>
     <div id="curveWrap">
       <svg id="curve" viewBox="0 0 900 320" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Suspect probability over time"></svg>
@@ -228,6 +263,9 @@ let currentT = 0;
 let liveFollow = true;
 let es = null;             // EventSource
 let playTimer = null;
+let unit = "passage";      // "passage" (book mode) or "paragraph" (URL mode)
+let logScale = false;      // Whodunit Curve y-axis: linear (default) vs log
+const LOG_FLOOR = 1e-4;    // clamp for log(0): probabilities below this pin to the axis floor
 
 const $ = (id) => document.getElementById(id);
 
@@ -285,18 +323,28 @@ function xScale(t, n) {
   const n1 = Math.max(1, n);
   return C.l + (t-1) * (C.w - C.l - C.r) / Math.max(1, n1-1 || 1);
 }
-function yScale(p) { return C.t + (1-p) * (C.h - C.t - C.b); }
+function yScale(p) {
+  const h = C.h - C.t - C.b;
+  if (!logScale) return C.t + (1 - p) * h;
+  // Log axis: map [LOG_FLOOR, 1] -> [bottom, top]. Spreads apart the low band.
+  const floorLog = Math.log10(LOG_FLOOR);           // e.g. -4
+  const lp = Math.log10(Math.max(p, LOG_FLOOR));    // [-4, 0]
+  const frac = (lp - floorLog) / (0 - floorLog);    // 0 at floor, 1 at p=1
+  return C.t + (1 - frac) * h;
+}
 
 function renderCurve() {
   const svg = $("curve");
   const n = steps.length;
   const totalN = maxN();
   let out = "";
-  // gridlines + y ticks (0,.25,.5,.75,1)
-  [0,0.25,0.5,0.75,1].forEach(v => {
+  // gridlines + y ticks: linear (0..100%) or log (100% down to 0.01%)
+  const yTicks = logScale ? [1, 0.1, 0.01, 0.001, 0.0001] : [0, 0.25, 0.5, 0.75, 1];
+  yTicks.forEach(v => {
     const y = yScale(v);
+    const label = logScale ? (+(v*100).toPrecision(3)) + "%" : Math.round(v*100) + "%";
     out += `<line class="grid-line" x1="${C.l}" y1="${y.toFixed(1)}" x2="${C.w-C.r}" y2="${y.toFixed(1)}"/>`;
-    out += `<text class="tick" x="${C.l-8}" y="${(y+4).toFixed(1)}" text-anchor="end">${Math.round(v*100)}%</text>`;
+    out += `<text class="tick" x="${C.l-8}" y="${(y+4).toFixed(1)}" text-anchor="end">${label}</text>`;
   });
   // x axis baseline
   out += `<line class="axis" x1="${C.l}" y1="${yScale(0).toFixed(1)}" x2="${C.w-C.r}" y2="${yScale(0).toFixed(1)}"/>`;
@@ -422,36 +470,56 @@ function solve() {
   $("message").textContent = ""; $("message").className = "msg";
   $("story").innerHTML = ""; $("dataTable").querySelector("tbody").innerHTML = "";
   $("cost").textContent = "$0.000000";
-  const url = $("url").value.trim();
-  if (!url) { setPhase("Enter a story URL first.", "err"); return; }
-  const params = new URLSearchParams({
-    url,
-    limit: $("limit").value || "40",
-    mock: $("mock").checked ? "1" : "0",
-  });
-  const sus = $("suspects").value.trim();
-  if (sus) params.set("suspects", sus);
+
+  const mode = $("mode").value;
+  let endpoint, params, runLabel = "story";
+  if (mode === "book") {
+    const book = $("book").value;
+    if (!book) { setPhase("Pick a book first (ingest one and build its ledger via the CLI).", "err"); return; }
+    params = new URLSearchParams({
+      book,
+      limit: $("limit").value || "40",
+      mock: $("mock").checked ? "1" : "0",
+      candidate_set: $("candidateSet").value,
+    });
+    endpoint = "/api/solve_book?";
+    const opt = $("book").options[$("book").selectedIndex];
+    runLabel = opt ? opt.text : book;
+  } else {
+    const url = $("url").value.trim();
+    if (!url) { setPhase("Enter a story URL first.", "err"); return; }
+    params = new URLSearchParams({
+      url,
+      limit: $("limit").value || "40",
+      mock: $("mock").checked ? "1" : "0",
+    });
+    const sus = $("suspects").value.trim();
+    if (sus) params.set("suspects", sus);
+    endpoint = "/api/solve?";
+    try { runLabel = new URL(url).pathname.split('/').pop(); } catch(_) {}
+  }
 
   $("solve").disabled = true; $("stop").disabled = false;
   $("play").disabled = true; $("scrub").disabled = true;
   setPhase("Connecting…", "on");
 
-  es = new EventSource("/api/solve?" + params.toString());
+  es = new EventSource(endpoint + params.toString());
 
   es.addEventListener("meta", (ev) => {
     const m = JSON.parse(ev.data);
+    unit = m.unit || (mode === "book" ? "passage" : "paragraph");
     suspects = m.suspects || [];
     assignColors(suspects);
     renderLegend(); buildBars(); rebuildTableHead(); renderCurve();
     $("model").textContent = m.model + (m.mock ? " (mock)" : "");
     $("scrub").max = m.n_paragraphs;
     $("choiceNote").textContent = "suspects from " + m.choices_source + " · question: “" + m.question + "”";
-    setPhase(`Reading “${new URL(url).pathname.split('/').pop()}” — ${m.n_paragraphs} paragraphs…`, "on");
+    setPhase(`Reading “${runLabel}” — ${m.n_paragraphs} ${unit}s…`, "on");
   });
 
   es.addEventListener("querying", (ev) => {
     const d = JSON.parse(ev.data);
-    setPhase(`🔍 JEV is reading paragraph ${d.t} and deciding…`, "on");
+    setPhase(`🔍 JEV is reading ${unit} ${d.t} and deciding…`, "on");
   });
 
   es.addEventListener("step", (ev) => {
@@ -520,7 +588,38 @@ function togglePlay() {
 // ---- Utils ------------------------------------------------------------------
 function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 
+// ---- Book catalog + mode toggle ---------------------------------------------
+async function loadBooks() {
+  const sel = $("book");
+  try {
+    const r = await fetch("/api/books");
+    const data = await r.json();
+    const books = (data.books || []).filter(b => b.has_mock_ledger || b.has_real_ledger);
+    if (books.length === 0) {
+      sel.innerHTML = '<option value="">No books with a ledger yet — build one via the CLI</option>';
+      return;
+    }
+    sel.innerHTML = books.map(b => {
+      const led = b.has_real_ledger ? "real ledger" : "mock ledger";
+      const title = b.title || b.book_id;
+      return `<option value="${escapeHtml(b.book_id)}">${escapeHtml(title)} — ${b.n_chunks} passages [${led}]</option>`;
+    }).join("");
+  } catch (e) {
+    sel.innerHTML = '<option value="">Could not load books</option>';
+  }
+}
+
+function applyMode() {
+  const isBook = $("mode").value === "book";
+  $("bookControls").style.display = isBook ? "" : "none";
+  $("paragraphControls").style.display = isBook ? "none" : "";
+}
+
 // ---- Wire up ----------------------------------------------------------------
+$("mode").addEventListener("change", applyMode);
+applyMode();
+loadBooks();
+$("logScale").addEventListener("change", (e) => { logScale = e.target.checked; renderCurve(); });
 $("solve").addEventListener("click", solve);
 $("stop").addEventListener("click", () => { stop(); setPhase("Stopped.", ""); });
 $("play").addEventListener("click", togglePlay);

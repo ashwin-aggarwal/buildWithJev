@@ -1,0 +1,260 @@
+# Character roster. HAND-EDITABLE and AUTHORITATIVE: once this file exists the
+# extraction API is never called again for this book.
+#   canonical            fullest name; used as the Jev option label
+#   aliases              other exact strings the text uses for this person
+#   is_suspect           set by hand; candidate_set=suspects_only uses these
+#   uncertain            extractor was unsure about this merge/split
+#   first_mention_chunk  DERIVED in code from alias matches; edits are overwritten
+#   evidence             alias -> quote, for checking the extraction
+# Do NOT record who the culprit is here; that belongs in the separate answer key.
+book_id: pg69087
+pipeline_version: '1'
+source: openrouter:deepseek/deepseek-v4-flash
+characters:
+- canonical: Mrs. Ferrars
+  aliases:
+  - Mrs. Ferrars'
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 1
+  evidence:
+    Mrs. Ferrars: Mrs. Ferrars died on the night of the 16th–17th September—a Thursday.
+    Mrs. Ferrars': It was the milkman. He had it from the Ferrars' cook.
+- canonical: Caroline Sheppard
+  aliases:
+  - Caroline
+  - my sister Caroline
+  - my sister
+  - Miss Sheppard
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 1
+  evidence:
+    Caroline: What on earth are you doing out there, James? Why don't you come and get your breakfast?"
+    my sister Caroline: From the dining-room on my left there came the rattle of tea-cups and the short,
+      dry cough of my sister Caroline.
+    my sister: '"How did you know?" "Annie told me."'
+    Miss Sheppard: I'd rather the doctor came with me if you don't mind, Miss Sheppard.
+- canonical: James Sheppard
+  aliases:
+  - Dr. Sheppard
+  - Sheppard
+  - James
+  - doctor
+  - my friend
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 1
+  evidence:
+    Dr. Sheppard: '"Good evening, Dr. Sheppard," said Miss Russell.'
+    Sheppard: '"Sheppard!" he exclaimed. "Just the man I wanted to get hold of."'
+    James: '"Just coming, my dear," I said hastily. "I''ve been hanging up my overcoat."'
+    doctor: I will tell you the truth,' I said. 'At the time I had no suspicion whatever, but since—well,
+      it was mere idle talk on my sister's part that first put the idea into my head.
+    my friend: Come with me, my friend.
+- canonical: Annie
+  aliases: []
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 2
+  evidence:
+    Annie: '"How did you know?" "Annie told me."'
+- canonical: Ashley Ferrars
+  aliases:
+  - Mr. Ferrars
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 1
+  evidence:
+    Ashley Ferrars: and there's no doubt that the wife of a man like Ashley Ferrars must have had to suffer
+      a good deal
+    Mr. Ferrars: Mr. Ferrars died of acute gastritis
+- canonical: Roger Ackroyd
+  aliases:
+  - Mr. Ackroyd
+  - Ackroyd
+  - Roger
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 4
+  evidence:
+    Roger Ackroyd: Now when Roger Ackroyd was a lad of twenty-one, he fell in love with, and married,
+      a beautiful woman some five or six years his senior.
+    Mr. Ackroyd: Mr. Ackroyd knew me in London
+    Ackroyd: Ackroyd has always interested me
+    Roger: I mention the name of my friend, Mr. Roger Ackroyd.
+- canonical: Ralph Paton
+  aliases:
+  - Ralph
+  - Captain Ralph Paton
+  - Captain Paton
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 4
+  evidence:
+    Ralph Paton: who is at the Three Boars?" "Captain Ralph Paton
+    Ralph: '"Ralph?" he said vaguely. "Oh! no, it''s not Ralph.'
+    Captain Ralph Paton: The description left me in no doubt. "That must be Captain Ralph Paton," I said
+      slowly.
+    Captain Paton: Captain Paton is missing
+- canonical: Mrs. Cecil Ackroyd
+  aliases:
+  - Mrs. Ackroyd
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 4
+  evidence:
+    Mrs. Cecil Ackroyd: Mrs. Cecil Ackroyd, widow of Ackroyd's ne'er-do-well younger brother
+    Mrs. Ackroyd: Mrs. Ackroyd's eloquence was cut short
+- canonical: Miss Russell
+  aliases: []
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 4
+  evidence:
+    Miss Russell: The last of them, a redoubtable lady called Miss Russell, has reigned undisputed for
+      five years
+- canonical: Flora Ackroyd
+  aliases:
+  - Flora
+  - Miss Flora
+  - Miss Ackroyd
+  - Mademoiselle Flora
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 8
+  evidence:
+    Flora Ackroyd: '"Flora Ackroyd?" I exclaimed in surprise'
+    Flora: '"You haven''t congratulated me yet, Dr. Sheppard," said Flora.'
+    Miss Flora: She held out her left hand.
+    Miss Ackroyd: '"Mademoiselle," said Poirot, "will you let an old man congratulate you'
+    Mademoiselle Flora: Mademoiselle Flora loves?
+- canonical: Mrs. Ackroyd
+  aliases: []
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 4
+  evidence:
+    Mrs. Ackroyd: Just then Mrs. Ackroyd rustled in, full of apologies for being late.
+- canonical: Hector Blunt
+  aliases:
+  - Major Blunt
+  - Blunt
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 17
+  evidence:
+    Major Blunt: '"You know Major Blunt, don''t you, doctor?"'
+    Hector Blunt: A lot of people know Hector Blunt—at least by repute.
+    Blunt: Blunt entered the room now
+- canonical: Parker
+  aliases: []
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 14
+  evidence:
+    Parker: The door was opened with admirable promptitude by Parker, the butler.
+- canonical: Geoffrey Raymond
+  aliases:
+  - Raymond
+  - Mr. Raymond
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 14
+  evidence:
+    Geoffrey Raymond: Ackroyd's secretary, a pleasant young fellow by the name of Raymond
+    Raymond: Raymond nodded, and went on his way
+    Mr. Raymond: '"Are you quite sure about it, sir." "Absolutely. No doubt whatever."'
+- canonical: Miss Ganett
+  aliases: []
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 6
+  evidence:
+    Miss Ganett: Damn! Here's old Miss Ganett coming.
+- canonical: Mr. Porrott
+  aliases:
+  - M. Poirot
+  - Hercule Poirot
+  - Poirot
+  - M. Hercule Poirot
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 8
+  evidence:
+    M. Poirot: M. Poirot will do everything he can for you
+    Hercule Poirot: he's Hercule Poirot!
+    Poirot: Poirot nodded
+    M. Hercule Poirot: This is M. Hercule Poirot, I expect you've heard of him.
+- canonical: Inspector Davis
+  aliases:
+  - the inspector
+  - Davis
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 25
+  evidence:
+    Inspector Davis: Inspector Davis unlocked the door of the lobby
+    the inspector: the inspector turned to the butler
+    Davis: Davis nodded
+- canonical: Colonel Melrose
+  aliases: []
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 33
+  evidence:
+    Colonel Melrose: Colonel Melrose, the Chief Constable, and another man
+- canonical: Inspector Raglan
+  aliases:
+  - Raglan
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 35
+  evidence:
+    Inspector Raglan: '"I''ve heard of some very remarkable successes of yours," observed the colonel,
+      thawing.'
+    Raglan: Raglan's countenance became still more gracious.
+- canonical: Ursula Bourne
+  aliases:
+  - Bourne
+  - Ursula
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 45
+  evidence:
+    Ursula Bourne: You are Ursula Bourne?
+    Bourne: Bourne came in
+    Ursula: that child is going to stay with us
+- canonical: Elsie Dale
+  aliases: []
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 44
+  evidence:
+    Elsie Dale: Elsie Dale (second housemaid)
+- canonical: Charles Kent
+  aliases:
+  - Kent
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 94
+  evidence:
+    Charles Kent: His name is Charles Kent
+    Kent: Now then, Kent, stand up
+- canonical: Mrs. Richard Folliott
+  aliases:
+  - Mrs. Folliott
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 57
+  evidence:
+    Mrs. Folliott: Mrs. Richard Folliott, Marby Grange
+- canonical: Mr. Hammond
+  aliases:
+  - Hammond
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 43
+  evidence:
+    Mr. Hammond: Mr. Hammond has just arrived
+    Hammond: Hammond listened with close attention
