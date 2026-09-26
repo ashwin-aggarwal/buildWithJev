@@ -116,6 +116,18 @@ Writes one JSON row per paragraph to `data/results/holmes.jsonl`. Responses are
 cached on disk (`.cache/jev/`), so reruns are free and an interrupted run
 resumes where it stopped.
 
+## 11. The live demo website
+
+```bash
+uv run python scripts/serve.py       # then open http://127.0.0.1:8000
+```
+
+Paste a Gutenberg "Plain Text UTF-8" link and press **Solve** to watch JEV read
+the story and update its guess live. **Mock mode is on by default (free).** Untick
+it for real calls (needs steps 3–5 done). The key stays on the server; it is never
+sent to the browser. Cost is shown live, with a 200-paragraph cap and the 32k
+prefix guard as safety rails.
+
 ---
 
 ## Where a human is required
