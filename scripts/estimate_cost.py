@@ -99,7 +99,7 @@ def estimate(parsed_path: Path, limit: int | None) -> None:
         print(f"WARNING: prefix exceeds the {config.MAX_INPUT_TOKENS:,}-token limit "
               f"starting at paragraph t={overflow_t}.")
         print("Later calls will fail unless build_context() trims/summarizes the")
-        print("earliest paragraphs. (That trimming is the friend's call.)")
+        print("earliest paragraphs.")
         print("!" * 60)
     else:
         print("OK: even the longest prefix fits within the input limit.")

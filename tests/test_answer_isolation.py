@@ -22,7 +22,8 @@ REPO = SRC.parents[1]
 STATE_BUILDING = [
     SRC / f for f in ("ingest.py", "chunking.py", "roster.py", "questions.py", "ledger.py",
                       "render.py", "inference.py", "jev_client.py", "storage.py",
-                      "friend_stubs.py", "webapp.py", "story.py", "tokens.py", "cli.py")
+                      "friend_stubs.py", "webapp.py", "story.py", "tokens.py", "cli.py",
+                      "viewer.py")
 ] + [REPO / "scripts" / "run_curve.py"]
 
 

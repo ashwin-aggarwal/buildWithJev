@@ -77,11 +77,12 @@ PARQUET_DIR: Path = RESULTS_DIR / "parquet"  # derived, disposable (gitignored)
 QUESTIONS_DIR: Path = PROJECT_ROOT / "config"
 COMPRESSION_QUESTIONS_PATH: Path = QUESTIONS_DIR / "compression_questions.yaml"
 INFERENCE_QUESTIONS_PATH: Path = QUESTIONS_DIR / "inference_questions.yaml"
+MODEL_PRICES_PATH: Path = QUESTIONS_DIR / "model_prices.yaml"  # Cost Analysis tab
 PROMPTS_DIR: Path = PROJECT_ROOT / "prompts"
 EXTRACT_PROMPT_PATH: Path = PROMPTS_DIR / "extract_characters.txt"
 
 # Bump whenever parsing/chunking/segmentation changes; stamped into every artifact.
-PIPELINE_VERSION: str = "1"
+PIPELINE_VERSION: str = "2"  # 2: drop page numbers/footnote markers, fix drop caps
 
 # Words per chunk. Chunks accumulate whole paragraphs until they reach this.
 CHUNK_SIZE_TARGET: int = int(os.getenv("CHUNK_SIZE_TARGET", "500"))

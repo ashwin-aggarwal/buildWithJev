@@ -53,8 +53,13 @@ logger = logging.getLogger("detective_jev.client")
 # text; this is just the key in the questions/answers maps.
 _QUESTION_ID = "killer"
 
-# HTTP statuses worth retrying.
-_RETRYABLE_STATUS = {408, 409, 425, 429, 500, 502, 503, 504}
+# HTTP statuses worth retrying. All 5xx are retried too (see _is_retryable),
+# which covers Cloudflare's 52x codes (e.g. 520) that OpenRouter can return.
+_RETRYABLE_STATUS = {408, 409, 425, 429}
+
+
+def _is_retryable(status: int) -> bool:
+    return status in _RETRYABLE_STATUS or 500 <= status < 600
 
 _QUESTION_TYPES = {"choice", "score", "noul"}
 
@@ -263,7 +268,7 @@ def _post(body: dict[str, Any]) -> tuple[dict[str, Any], float]:
             )
             latency_ms = (time.perf_counter() - start) * 1000.0
 
-            if resp.status_code in _RETRYABLE_STATUS:
+            if _is_retryable(resp.status_code):
                 raise _RetryableHTTP(resp.status_code, resp.text)
             resp.raise_for_status()
             return resp.json(), latency_ms

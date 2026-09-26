@@ -1,0 +1,39 @@
+# List prices used by the Cost Analysis tab to price "the same calls on another
+# model". Pure arithmetic: no model is ever called for this.
+#
+# Source: OpenRouter public model list (https://openrouter.ai/api/v1/models),
+# standard (non-batch) prices, fetched 2026-09-26. Prices change; edit freely.
+# Jev's own price comes from config.PRICE_PER_1M_INPUT_TOKENS (output is free).
+source: "OpenRouter model list, standard pricing"
+fetched: "2026-09-26"
+models:
+  - id: openai/gpt-6-sol
+    name: GPT-6 Sol
+    provider: OpenAI
+    input_per_m: 2.00
+    output_per_m: 10.00
+  - id: openai/gpt-6-luna
+    name: GPT-6 Luna
+    provider: OpenAI
+    input_per_m: 0.10
+    output_per_m: 0.50
+  - id: anthropic/claude-opus-5.5
+    name: Claude Opus 5.5
+    provider: Anthropic
+    input_per_m: 4.00
+    output_per_m: 20.00
+  - id: anthropic/claude-sonnet-5
+    name: Claude Sonnet 5
+    provider: Anthropic
+    input_per_m: 2.00
+    output_per_m: 10.00
+  - id: deepseek/deepseek-v4-pro
+    name: DeepSeek V4 Pro
+    provider: DeepSeek
+    input_per_m: 0.42
+    output_per_m: 0.84
+  - id: deepseek/deepseek-v4-flash
+    name: DeepSeek V4 Flash
+    provider: DeepSeek
+    input_per_m: 0.05
+    output_per_m: 0.09

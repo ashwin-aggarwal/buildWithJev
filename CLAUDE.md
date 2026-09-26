@@ -52,6 +52,72 @@ The whole pipeline has now run for real (not just mock), and it works.
   gray curve, random "verdict") while looking legit. **Uncheck "Mock mode" for
   the real run.** (UX fix is item 2 below.)
 
+### SETUP rewrite + ingest fixes (2026-09-26)
+
+- **SETUP.md rewritten around book mode.** The old step 10 ran *paragraph mode*
+  on the whole Holmes collection (1,973 paragraphs). Paragraph mode resends
+  1..t each step, so it passed the 32K limit at ~paragraph 470 after ~$0.30.
+  README's quick start was updated to match.
+- **`run_curve.py` paragraph mode now refuses up front** (`_first_overflow`) when
+  the run would pass `MAX_INPUT_TOKENS`, with no API calls. Use `--limit` or book mode.
+- **Ingest fixes, `PIPELINE_VERSION` bumped 1 → 2.** Inline markup no longer
+  splits words (Gutenberg drop caps gave "T o Sherlock"; `<i>` gave "“ Remorse ,”").
+  Page numbers (`.pagenum`) and footnote markers (`.fnanchor`) are stripped;
+  they used to leak into the text ("One 2 might").
+- **The committed `pg69087` artifacts are still v1** (built with the old
+  parser): 127 paragraphs contain a stray page number and 90 have extra spaces.
+  They still work for inference. `cli ledger pg69087` now reports a
+  version mismatch. Refreshing them needs `cli ingest <url> --force`, then
+  `cli ledger pg69087 --real --force` (~$0.035), then a new inference run.
+  That is the owner's call.
+- Ingest works on any single-page HTML with `<p>` paragraphs, not only
+  Gutenberg. Limits are listed in SETUP.md, "Which websites work?".
+
+### Run viewer + Cost analysis (2026-09-26)
+
+- **`/` is now a replay viewer** of saved book-mode results
+  (`viz/index.html` + `viz/app.css` + `viz/app.js`, vanilla JS/SVG, no build,
+  no CDN). The old live-solve page moved unchanged to `viz/live.html` at
+  **`/live`**.
+- **One piece of state, `t`.** Every control goes through `setT()`: scrubber,
+  prev/next, play (0.5×–4×, 1× = 2 chunks/s), ←/→ (Shift = 10), Space,
+  Home/End, and click/drag on the curve. There are three panels:
+  - bars at t, animated re-sorting, fixed 0–1 scale;
+  - the line chart, which draws only up to t by default ("Show full run" to see
+    all), with a log-scale toggle (floor 1%, since Jev reports 2 decimals);
+  - the chunk text, which scrolls independently. That fixes the old
+    page-jumping bug caused by `scrollIntoView`.
+
+  Hovering a line or legend entry highlights that character in all three
+  panels, including their names in the text.
+- **Colours** follow the dataviz reference palette (validated light and dark).
+  The 8 characters with the highest peak probability get the 8 slots, assigned
+  in first-appearance order. Everyone else is a grey "Other" line, and
+  `none_of_these` is dashed. **No spoilers:** candidates are ordered by first
+  appearance, there is no verdict banner, and the viewer never reads
+  `data/answers/`. `viewer.py` was added to the isolation test.
+- **API** (`src/detective_jev/viewer.py`, read-only):
+  - `GET /api/runs`
+  - `GET /api/run/<file>`: probabilities, chunks, roster names
+  - `GET /api/cost/<file>`
+
+  File names are regex-validated. The results format is unchanged.
+- **Cost analysis tab** is pure arithmetic; no model is called:
+  - Jev inference cost, tokens, and latency are measured from the results rows.
+  - Compression isn't recorded in the ledger, so its tokens are estimated from
+    the chunk text plus the question battery.
+  - Other models are priced on the same input tokens, plus the output a text
+    model would have to write: the same full distributions, or top answers
+    only, plus optional "thinking" tokens.
+  - Prices live in `config/model_prices.yaml` (OpenRouter list prices,
+    2026-09-26).
+  - Speed and accuracy are not compared.
+- **First real results file:** `data/results/pg69087__077c2402811d.jsonl`
+  (full_cast, condition `v1`; 133 calls, $0.049, 47 s of Jev time).
+- **Known data issue:** chunk 133 of `pg69087` is the publisher's back-matter
+  advertisements, not story text. Ingest does not strip trailing ads, so Jev
+  read them at the last step.
+
 ## Next steps (roadmap for future sessions)
 
 1. **Test on more novels — rule out training-data contamination.** Roger Ackroyd

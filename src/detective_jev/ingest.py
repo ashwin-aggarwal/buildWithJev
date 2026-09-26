@@ -6,6 +6,8 @@
     sections of modern HTML editions, everything outside the
     "*** START/END OF THE PROJECT GUTENBERG EBOOK ***" markers of older ones,
     transcriber's notes, and link-only tables of contents.
+  - Inline page numbers (.pagenum) and footnote markers are removed, and
+    inline markup never splits a word (drop caps: <span>T</span>o -> "To").
   - Paragraph boundaries are preserved (one <p> = one paragraph). Headings
     (<h1>-<h6>) are recorded as chapter metadata with paragraph offsets and
     excluded from the body text.
@@ -72,6 +74,13 @@ def _clean(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def _text(el: Tag) -> str:
+    """Visible text of an element. Inline tags are joined WITHOUT a separator so
+    markup inside a word (a drop-cap <span>T</span>o) stays one word; <br> is
+    turned into a space before parsing (see parse_html)."""
+    return _clean(el.get_text(""))
+
+
 def _in_skipped_container(el: Tag) -> bool:
     for parent in [el, *el.parents]:
         if not isinstance(parent, Tag):
@@ -84,11 +93,11 @@ def _in_skipped_container(el: Tag) -> bool:
 
 def _is_link_list(p: Tag) -> bool:
     """A paragraph made (almost) entirely of internal links is a TOC line."""
-    text = _clean(p.get_text(" "))
+    text = _text(p)
     links = p.find_all("a", href=re.compile(r"^#"))
     if not text or not links:
         return False
-    link_text = sum(len(_clean(a.get_text(" "))) for a in links)
+    link_text = sum(len(_text(a)) for a in links)
     return link_text / len(text) > 0.6
 
 
@@ -128,6 +137,12 @@ def parse_html(html: bytes | str) -> dict[str, Any]:
 
     for el in soup.find_all(["script", "style", "nav"]):
         el.decompose()
+    for br in soup.find_all("br"):
+        br.replace_with(" ")
+    # Printed page numbers and footnote markers sit inline in the prose
+    # ("One<span class="pagenum">2</span> might") and are not part of the story.
+    for el in soup.select(".pagenum, .pageno, .fnanchor, .footnote-ref"):
+        el.decompose()
     for sel in ("#pg-header", "#pg-footer", ".pg-header", ".pg-footer", "#pg-machine-header"):
         for el in soup.select(sel):
             el.decompose()
@@ -154,7 +169,7 @@ def parse_html(html: bytes | str) -> dict[str, Any]:
             continue  # nested inside a block we already take whole
         if _in_skipped_container(node):
             continue
-        text = _clean(node.get_text(" "))
+        text = _text(node)
         if not text or _START.search(text) or _END.search(text):
             continue
         if node.name in _HEADINGS:

@@ -1,634 +1,121 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Detective JEV</title>
+<title>Detective Jev</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>%F0%9F%95%B5</text></svg>" />
-<style>
-  /* Palette: validated dark-mode categorical hues + dark chrome (dataviz skill). */
-  :root {
-    --page:        #0d0d0d;
-    --surface:     #1a1a19;
-    --surface-2:   #222220;
-    --ink:         #ffffff;
-    --ink-2:       #c3c2b7;
-    --muted:       #898781;
-    --grid:        #2c2c2a;
-    --baseline:    #383835;
-    --border:      rgba(255,255,255,0.10);
-    --good:        #0ca30c;
-    --warning:     #fab219;
-    --critical:    #d03b3b;
-    color-scheme: dark;
-  }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; }
-  body {
-    background: var(--page);
-    color: var(--ink);
-    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
-    padding: 16px;
-    max-width: 1080px;
-    margin: 0 auto;
-  }
-  h1 { font-size: 22px; margin: 0; letter-spacing: 0.2px; }
-  .sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
-  a { color: #3987e5; }
-
-  .card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 14px 16px;
-    margin-top: 14px;
-  }
-  .card h2 {
-    font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px;
-    color: var(--muted); margin: 0 0 10px; font-weight: 600;
-  }
-
-  /* Controls */
-  .controls { display: grid; grid-template-columns: 1fr; gap: 10px; }
-  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-  label.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
-  input[type=text], input[type=number], select {
-    background: var(--surface-2); color: var(--ink);
-    border: 1px solid var(--border); border-radius: 8px;
-    padding: 8px 10px; font: inherit; font-size: 14px;
-  }
-  input[type=text] { min-width: 320px; flex: 1; }
-  .check { display: flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: 14px; }
-  button {
-    background: #3987e5; color: #fff; border: 0; border-radius: 8px;
-    padding: 9px 18px; font: inherit; font-weight: 600; cursor: pointer;
-  }
-  button:disabled { opacity: 0.45; cursor: default; }
-  button.ghost { background: var(--surface-2); color: var(--ink); border: 1px solid var(--border); }
-
-  /* Status bar */
-  #status { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; }
-  .stat { display: flex; flex-direction: column; }
-  .stat .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
-  .stat .v { font-size: 16px; font-weight: 600; }
-  .live-dot {
-    width: 9px; height: 9px; border-radius: 50%; background: var(--muted);
-    display: inline-block; margin-right: 7px; vertical-align: middle;
-  }
-  .live-dot.on { background: var(--warning); animation: pulse 1s ease-in-out infinite; }
-  .live-dot.done { background: var(--good); }
-  .live-dot.err { background: var(--critical); }
-  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.25;} }
-  #phase { font-weight: 600; }
-
-  /* Main grid */
-  .grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 14px; }
-  @media (max-width: 820px) { .grid { grid-template-columns: 1fr; } }
-
-  /* Bar chart */
-  #bars { width: 100%; display: block; }
-  .bar-label { fill: var(--ink); font-size: 13px; }
-  .bar-val   { fill: var(--ink-2); font-size: 12px; font-variant-numeric: tabular-nums; }
-  .bar-row   { transition: transform 0.55s cubic-bezier(.4,0,.2,1); }
-  .bar-rect  { transition: width 0.55s cubic-bezier(.4,0,.2,1); }
-
-  /* Story panel */
-  #story { max-height: 300px; overflow-y: auto; font-size: 14px; color: var(--ink-2); }
-  #story p { margin: 0 0 10px; padding: 6px 8px; border-radius: 6px; }
-  #story p.current { background: var(--surface-2); color: var(--ink); border-left: 3px solid var(--warning); }
-
-  /* Line chart */
-  #curveWrap { position: relative; }
-  #curve { width: 100%; display: block; }
-  .axis { stroke: var(--baseline); stroke-width: 1; }
-  .grid-line { stroke: var(--grid); stroke-width: 1; }
-  .tick { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
-  .series-line { fill: none; stroke-width: 2; }
-  .playhead { stroke: var(--ink); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.6; }
-  #tooltip {
-    position: absolute; pointer-events: none; background: var(--surface-2);
-    border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
-    font-size: 12px; display: none; z-index: 5; min-width: 130px;
-  }
-  #tooltip .tt-t { color: var(--muted); margin-bottom: 4px; }
-  #tooltip .tt-row { display: flex; justify-content: space-between; gap: 12px; }
-  #tooltip .sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; }
-
-  /* Legend */
-  #legend { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 8px; }
-  .leg { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); }
-  .leg .sw { width: 11px; height: 11px; border-radius: 3px; }
-
-  /* Transport */
-  #transport { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-  input[type=range] { flex: 1; min-width: 200px; accent-color: #3987e5; }
-  .msg { color: var(--warning); font-size: 13px; }
-  .msg.err { color: var(--critical); }
-  table { border-collapse: collapse; width: 100%; font-size: 12px; font-variant-numeric: tabular-nums; }
-  th, td { text-align: right; padding: 3px 8px; border-bottom: 1px solid var(--grid); }
-  th:first-child, td:first-child { text-align: left; }
-  details { margin-top: 12px; }
-  summary { cursor: pointer; color: var(--muted); font-size: 13px; }
-</style>
+<link rel="stylesheet" href="/static/app.css" />
 </head>
 <body>
-  <header>
-    <h1>🕵 Detective JEV</h1>
-    <div class="sub">Pick an ingested book (real pipeline) or paste a Gutenberg link, and watch JEV read it passage by passage, updating its guess for the killer in real time.</div>
-  </header>
-
-  <div class="card">
-    <div class="controls">
-      <div class="row">
-        <label class="field">Mode
-          <select id="mode" style="min-width:320px">
-            <option value="book">Book mode — ledger (the real pipeline)</option>
-            <option value="paragraph">Paragraph mode — URL (quick, naive concat)</option>
-          </select>
-        </label>
-      </div>
-
-      <!-- Book mode: pick an ingested book that has a ledger built. -->
-      <div id="bookControls">
-        <div class="row">
-          <label class="field" style="flex:1">Book (ingested + ledger built via the CLI)
-            <select id="book" style="min-width:320px"><option value="">Loading books…</option></select>
-          </label>
-          <label class="field">Suspect set
-            <select id="candidateSet">
-              <option value="full_cast">Full cast</option>
-              <option value="suspects_only">Suspects only</option>
-            </select>
-          </label>
-        </div>
-      </div>
-
-      <!-- Paragraph mode: paste a Gutenberg plain-text URL (no compression). -->
-      <div id="paragraphControls" style="display:none">
-        <div class="row">
-          <label class="field" style="flex:1">Story URL (Gutenberg "Plain Text UTF-8")
-            <input id="url" type="text" list="presets"
-                   placeholder="https://www.gutenberg.org/files/863/863-0.txt"
-                   value="https://www.gutenberg.org/files/863/863-0.txt" />
-            <datalist id="presets">
-              <option value="https://www.gutenberg.org/files/863/863-0.txt" label="The Mysterious Affair at Styles — Christie"></option>
-              <option value="https://www.gutenberg.org/files/2852/2852-0.txt" label="The Hound of the Baskervilles — Doyle"></option>
-              <option value="https://www.gutenberg.org/files/1661/1661-0.txt" label="The Adventures of Sherlock Holmes — Doyle"></option>
-            </datalist>
-          </label>
-        </div>
-        <div class="row">
-          <label class="field">Suspects (optional, comma-separated)
-            <input id="suspects" type="text" placeholder="leave blank to use build_choices()" style="min-width:280px" />
-          </label>
-        </div>
-      </div>
-
-      <div class="row">
-        <label class="field">Max passages
-          <input id="limit" type="number" value="40" min="1" max="200" style="width:90px" />
-        </label>
-        <label class="check" style="margin-top:16px"><input id="mock" type="checkbox" checked /> Mock mode (free — no real calls)</label>
-      </div>
-      <div class="row">
-        <button id="solve">▶ Solve the mystery</button>
-        <button id="stop" class="ghost" disabled>Stop</button>
-        <span class="sub" id="choiceNote"></span>
-      </div>
-    </div>
+<header class="top">
+  <div class="brand">
+    <h1>Detective Jev</h1>
+    <div class="sub" id="bookline">Loading…</div>
   </div>
+  <nav class="tabs" role="tablist" aria-label="Views">
+    <button role="tab" id="tab-run" aria-controls="view-run" aria-selected="true">Run</button>
+    <button role="tab" id="tab-cost" aria-controls="view-cost" aria-selected="false">Cost analysis</button>
+  </nav>
+  <label class="runpick" id="runpick" hidden>
+    <span>Run</span>
+    <select id="runsel"></select>
+  </label>
+</header>
 
-  <div class="card">
-    <div id="status">
-      <div class="stat" style="min-width:230px">
-        <span class="k">Detective JEV</span>
-        <span class="v"><span id="dot" class="live-dot"></span><span id="phase">Idle — paste a link and press Solve</span></span>
+<div class="mockbanner" id="mockbanner" hidden>
+  MOCK RUN: these are random numbers for testing, not Jev's real output.
+</div>
+
+<div class="empty" id="empty" hidden>
+  <h2>No saved runs yet</h2>
+  <p>Create one with <code>uv run python scripts/run_curve.py --book &lt;book_id&gt;</code>, then reload this page.</p>
+</div>
+
+<main id="view-run" class="run" role="tabpanel" aria-labelledby="tab-run" hidden>
+  <section class="panel bars-panel" aria-label="Probabilities at the current chunk">
+    <div class="panel-head">
+      <h2>Suspects at chunk <span id="bars-t">–</span></h2>
+    </div>
+    <div class="bars" id="bars"></div>
+  </section>
+
+  <section class="panel curve-panel" aria-label="Probability over the book">
+    <div class="panel-head">
+      <h2>Probability over the book</h2>
+      <div class="toggles">
+        <label class="check"><input type="checkbox" id="fullrun" /> Show full run</label>
+        <label class="check"><input type="checkbox" id="logscale" /> Log scale</label>
       </div>
-      <div class="stat"><span class="k">Leading suspect</span><span class="v" id="leading">—</span></div>
-      <div class="stat"><span class="k">Confidence</span><span class="v" id="conf">—</span></div>
-      <div class="stat"><span class="k">Passage</span><span class="v" id="progress">—</span></div>
-      <div class="stat"><span class="k">Cost so far</span><span class="v" id="cost">$0.000000</span></div>
-      <div class="stat"><span class="k">Model</span><span class="v" id="model" style="font-size:13px">—</span></div>
     </div>
-    <div id="message" class="msg"></div>
-  </div>
+    <div class="chartwrap" id="chartwrap">
+      <svg id="chart" role="img" aria-label="Line chart of each character's probability by chunk. Click or drag to move through the book."></svg>
+      <div class="tip" id="tip" hidden></div>
+    </div>
+    <div class="legend" id="legend" aria-label="Legend: click to show or hide a line"></div>
+  </section>
 
-  <div class="grid">
-    <div class="card">
-      <h2>Current suspicion</h2>
-      <svg id="bars" viewBox="0 0 460 200" preserveAspectRatio="xMinYMin meet" role="img" aria-label="Suspect probabilities"></svg>
+  <section class="panel text-panel" aria-label="Text of the current chunk">
+    <div class="panel-head text-head">
+      <h2 id="chunk-title">Chunk –</h2>
+      <div class="muted" id="chunk-sub"></div>
     </div>
-    <div class="card">
-      <h2>The story so far</h2>
-      <div id="story"><p class="sub">The text JEV has read will appear here, newest highlighted.</p></div>
-    </div>
-  </div>
+    <div class="chunktext" id="chunktext" tabindex="0"></div>
+  </section>
 
-  <div class="card">
-    <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:10px">
-      <h2 style="margin:0">The Whodunit Curve — belief over time</h2>
-      <label class="check" style="font-size:13px" title="Log y-axis spreads apart the crowded low-probability suspects">
-        <input id="logScale" type="checkbox" /> Log scale
+  <div class="transport" aria-label="Playback">
+    <button class="icon" id="prev" title="Previous chunk (←)" aria-label="Previous chunk">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10.5 3.5 6 8l4.5 4.5" /></svg>
+    </button>
+    <button class="icon play" id="play" title="Play / pause (Space)" aria-label="Play">
+      <svg viewBox="0 0 16 16" aria-hidden="true" id="play-icon"><path d="M5 3.5v9l7.5-4.5z" class="fill" /></svg>
+    </button>
+    <button class="icon" id="next" title="Next chunk (→)" aria-label="Next chunk">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 3.5 10 8l-4.5 4.5" /></svg>
+    </button>
+    <input type="range" id="scrub" min="1" max="1" value="1" aria-label="Chunk" />
+    <span class="readout" id="readout">– / –</span>
+    <label class="speed">
+      <span>Speed</span>
+      <select id="speed">
+        <option value="0.5">0.5×</option>
+        <option value="1" selected>1×</option>
+        <option value="2">2×</option>
+        <option value="4">4×</option>
+      </select>
+    </label>
+  </div>
+</main>
+
+<main id="view-cost" class="cost" role="tabpanel" aria-labelledby="tab-cost" hidden>
+  <section class="tiles" id="tiles"></section>
+
+  <section class="panel cost-panel">
+    <div class="panel-head">
+      <h2>What one full run of this book would cost</h2>
+    </div>
+    <div class="cost-controls">
+      <label class="check"><input type="checkbox" id="c-compress" checked /> Include building the ledger (compression)</label>
+      <label class="field">
+        <span>A text model writes</span>
+        <select id="c-output">
+          <option value="full" selected>every probability (same information as Jev)</option>
+          <option value="top">only its top answer</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>Extra "thinking" tokens per call</span>
+        <input type="number" id="c-reason" min="0" step="100" value="0" />
       </label>
     </div>
-    <div id="legend"></div>
-    <div id="curveWrap">
-      <svg id="curve" viewBox="0 0 900 320" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Suspect probability over time"></svg>
-      <div id="tooltip"></div>
+    <div class="costbars" id="costbars"></div>
+    <div class="tablewrap">
+      <table id="costtable"></table>
     </div>
-    <div id="transport" style="margin-top:12px">
-      <button id="play" class="ghost" disabled>▶ Replay</button>
-      <input id="scrub" type="range" min="1" max="1" value="1" disabled />
-      <span class="sub" id="scrubLabel">t = 0 / 0</span>
-    </div>
-    <details>
-      <summary>Show data table</summary>
-      <div style="max-height:260px; overflow:auto; margin-top:8px">
-        <table id="dataTable"><thead></thead><tbody></tbody></table>
-      </div>
-    </details>
-  </div>
+    <div class="notes" id="costnotes"></div>
+  </section>
+</main>
 
-<script>
-"use strict";
-// ---- Palette (dark categorical, fixed order; overflow -> muted gray) --------
-const SERIES = ["#3987e5","#d95926","#199e70","#c98500","#d55181","#008300","#9085e9","#e66767"];
-const OVERFLOW = "#898781";
-
-// ---- State ------------------------------------------------------------------
-let suspects = [];
-let colorOf = {};
-let steps = [];            // {t, paragraph, probabilities, answer, confidence, cumulative_cost, ...}
-let currentT = 0;
-let liveFollow = true;
-let es = null;             // EventSource
-let playTimer = null;
-let unit = "passage";      // "passage" (book mode) or "paragraph" (URL mode)
-let logScale = false;      // Whodunit Curve y-axis: linear (default) vs log
-const LOG_FLOOR = 1e-4;    // clamp for log(0): probabilities below this pin to the axis floor
-
-const $ = (id) => document.getElementById(id);
-
-function assignColors(list) {
-  colorOf = {};
-  list.forEach((s, i) => { colorOf[s] = i < SERIES.length ? SERIES[i] : OVERFLOW; });
-}
-
-// ---- Legend -----------------------------------------------------------------
-function renderLegend() {
-  $("legend").innerHTML = suspects.map(s =>
-    `<span class="leg"><span class="sw" style="background:${colorOf[s]}"></span>${escapeHtml(s)}</span>`
-  ).join("");
-}
-
-// ---- Bar chart (racing bars) ------------------------------------------------
-const BAR = { w: 460, rowH: 30, gap: 8, labelW: 120, valW: 46, top: 6 };
-function buildBars() {
-  const svg = $("bars");
-  const h = BAR.top + suspects.length * (BAR.rowH + BAR.gap);
-  svg.setAttribute("viewBox", `0 0 ${BAR.w} ${h}`);
-  svg.innerHTML = suspects.map((s, i) => {
-    const barMax = BAR.w - BAR.labelW - BAR.valW;
-    return `<g class="bar-row" id="row-${i}" transform="translate(0,${BAR.top + i*(BAR.rowH+BAR.gap)})">
-      <text class="bar-label" x="0" y="${BAR.rowH/2+4}">${escapeHtml(s)}</text>
-      <rect class="bar-rect" id="rect-${i}" x="${BAR.labelW}" y="4" height="${BAR.rowH-8}" width="0" rx="4" fill="${colorOf[s]}"><title>${escapeHtml(s)}</title></rect>
-      <text class="bar-val" id="val-${i}" x="${BAR.labelW+4}" y="${BAR.rowH/2+4}">0%</text>
-    </g>`;
-  }).join("");
-  barIndex = {}; suspects.forEach((s,i)=> barIndex[s]=i);
-}
-let barIndex = {};
-function updateBars(step) {
-  if (!step) return;
-  const probs = step.probabilities || {};
-  const barMax = BAR.w - BAR.labelW - BAR.valW;
-  // sort suspects by probability desc for the "race"
-  const order = [...suspects].sort((a,b)=> (probs[b]||0)-(probs[a]||0));
-  order.forEach((s, pos) => {
-    const i = barIndex[s];
-    const p = probs[s] || 0;
-    const row = $("row-"+i), rect = $("rect-"+i), val = $("val-"+i);
-    if (!row) return;
-    row.setAttribute("transform", `translate(0,${BAR.top + pos*(BAR.rowH+BAR.gap)})`);
-    const wpx = Math.max(0, p*barMax);
-    rect.setAttribute("width", wpx.toFixed(1));
-    val.setAttribute("x", (BAR.labelW + wpx + 6).toFixed(1));
-    val.textContent = (p*100).toFixed(0) + "%";
-  });
-}
-
-// ---- Line chart -------------------------------------------------------------
-const C = { w: 900, h: 320, l: 42, r: 96, t: 14, b: 28 };
-function xScale(t, n) {
-  const n1 = Math.max(1, n);
-  return C.l + (t-1) * (C.w - C.l - C.r) / Math.max(1, n1-1 || 1);
-}
-function yScale(p) {
-  const h = C.h - C.t - C.b;
-  if (!logScale) return C.t + (1 - p) * h;
-  // Log axis: map [LOG_FLOOR, 1] -> [bottom, top]. Spreads apart the low band.
-  const floorLog = Math.log10(LOG_FLOOR);           // e.g. -4
-  const lp = Math.log10(Math.max(p, LOG_FLOOR));    // [-4, 0]
-  const frac = (lp - floorLog) / (0 - floorLog);    // 0 at floor, 1 at p=1
-  return C.t + (1 - frac) * h;
-}
-
-function renderCurve() {
-  const svg = $("curve");
-  const n = steps.length;
-  const totalN = maxN();
-  let out = "";
-  // gridlines + y ticks: linear (0..100%) or log (100% down to 0.01%)
-  const yTicks = logScale ? [1, 0.1, 0.01, 0.001, 0.0001] : [0, 0.25, 0.5, 0.75, 1];
-  yTicks.forEach(v => {
-    const y = yScale(v);
-    const label = logScale ? (+(v*100).toPrecision(3)) + "%" : Math.round(v*100) + "%";
-    out += `<line class="grid-line" x1="${C.l}" y1="${y.toFixed(1)}" x2="${C.w-C.r}" y2="${y.toFixed(1)}"/>`;
-    out += `<text class="tick" x="${C.l-8}" y="${(y+4).toFixed(1)}" text-anchor="end">${label}</text>`;
-  });
-  // x axis baseline
-  out += `<line class="axis" x1="${C.l}" y1="${yScale(0).toFixed(1)}" x2="${C.w-C.r}" y2="${yScale(0).toFixed(1)}"/>`;
-  // x ticks (a few)
-  const nn = Math.max(totalN, 1);
-  const tickStep = Math.max(1, Math.round(nn/6));
-  for (let t=1; t<=nn; t+=tickStep) {
-    const x = xScale(t, nn);
-    out += `<text class="tick" x="${x.toFixed(1)}" y="${(C.h-8).toFixed(1)}" text-anchor="middle">${t}</text>`;
-  }
-  // one line per suspect (up to available steps)
-  suspects.forEach(s => {
-    if (n === 0) return;
-    let pts = [];
-    for (let k=0; k<n; k++) {
-      const st = steps[k];
-      pts.push(`${xScale(st.t, nn).toFixed(1)},${yScale(st.probabilities[s]||0).toFixed(1)}`);
-    }
-    out += `<polyline class="series-line" stroke="${colorOf[s]}" points="${pts.join(" ")}"/>`;
-    // direct label at line end
-    const last = steps[n-1];
-    const lx = xScale(last.t, nn) + 6;
-    const ly = yScale(last.probabilities[s]||0) + 4;
-    out += `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" style="fill:${colorOf[s]};font-size:11px">${escapeHtml(shortName(s))}</text>`;
-  });
-  // playhead + markers at currentT
-  if (currentT >= 1 && n > 0) {
-    const px = xScale(currentT, nn);
-    out += `<line class="playhead" x1="${px.toFixed(1)}" y1="${C.t}" x2="${px.toFixed(1)}" y2="${yScale(0).toFixed(1)}"/>`;
-    const st = steps.find(s2 => s2.t === currentT);
-    if (st) suspects.forEach(s => {
-      const cy = yScale(st.probabilities[s]||0);
-      out += `<circle cx="${px.toFixed(1)}" cy="${cy.toFixed(1)}" r="4" fill="${colorOf[s]}" stroke="var(--surface)" stroke-width="1.5"/>`;
-    });
-  }
-  svg.innerHTML = out;
-}
-function shortName(s){ return s.length > 12 ? s.slice(0,11)+"…" : s; }
-function maxN(){ return Math.max(parseInt($("scrub").max)||steps.length, steps.length, 1); }
-
-// ---- Story panel ------------------------------------------------------------
-function renderStory() {
-  const box = $("story");
-  box.innerHTML = steps.map(st =>
-    `<p class="${st.t===currentT?'current':''}" data-t="${st.t}"><b style="color:var(--muted)">¶${st.t}</b> ${escapeHtml(st.paragraph)}</p>`
-  ).join("");
-  const cur = box.querySelector("p.current");
-  if (cur) cur.scrollIntoView({block:"nearest"});
-}
-
-// ---- Status -----------------------------------------------------------------
-function setPhase(text, cls) {
-  $("phase").textContent = text;
-  $("dot").className = "live-dot" + (cls?(" "+cls):"");
-}
-function renderStatus() {
-  const st = steps.find(s2 => s2.t === currentT);
-  if (st) {
-    const probs = st.probabilities || {};
-    const lead = suspects.reduce((a,b)=> (probs[b]||0)>(probs[a]||0)?b:a, suspects[0]);
-    $("leading").textContent = lead ? `${lead} (${Math.round((probs[lead]||0)*100)}%)` : "—";
-    $("conf").textContent = st.confidence != null ? st.confidence.toFixed(2) : "—";
-    $("cost").textContent = "$" + (st.cumulative_cost||0).toFixed(6);
-  }
-  $("progress").textContent = currentT + " / " + maxN();
-  $("scrubLabel").textContent = "t = " + currentT + " / " + maxN();
-}
-
-// ---- Data table -------------------------------------------------------------
-function rebuildTableHead() {
-  $("dataTable").querySelector("thead").innerHTML =
-    "<tr><th>¶</th>" + suspects.map(s=>`<th>${escapeHtml(shortName(s))}</th>`).join("") + "<th>lead</th></tr>";
-}
-function appendTableRow(st) {
-  const probs = st.probabilities||{};
-  const lead = suspects.reduce((a,b)=> (probs[b]||0)>(probs[a]||0)?b:a, suspects[0]);
-  const tr = document.createElement("tr");
-  tr.innerHTML = `<td>${st.t}</td>` + suspects.map(s=>`<td>${Math.round((probs[s]||0)*100)}</td>`).join("") +
-    `<td style="color:${colorOf[lead]}">${escapeHtml(shortName(lead))}</td>`;
-  $("dataTable").querySelector("tbody").appendChild(tr);
-}
-
-// ---- Full render for a given t (used by scrubber/replay) ---------------------
-function renderAt(t) {
-  currentT = t;
-  const st = steps.find(s2 => s2.t === t);
-  updateBars(st);
-  renderCurve();
-  renderStory();
-  renderStatus();
-}
-
-// ---- Tooltip on curve -------------------------------------------------------
-function setupTooltip() {
-  const wrap = $("curveWrap"), svg = $("curve"), tip = $("tooltip");
-  svg.addEventListener("mousemove", (e) => {
-    if (steps.length === 0) return;
-    const rect = svg.getBoundingClientRect();
-    const scaleX = C.w / rect.width;
-    const svgX = (e.clientX - rect.left) * scaleX;
-    const nn = maxN();
-    let t = Math.round((svgX - C.l) / ((C.w-C.l-C.r)/Math.max(1,nn-1)) ) + 1;
-    t = Math.min(steps.length, Math.max(1, t));
-    const st = steps.find(s2 => s2.t === t);
-    if (!st) { tip.style.display="none"; return; }
-    const probs = st.probabilities||{};
-    const ordered = [...suspects].sort((a,b)=>(probs[b]||0)-(probs[a]||0));
-    tip.innerHTML = `<div class="tt-t">Paragraph ${t}</div>` + ordered.map(s=>
-      `<div class="tt-row"><span><span class="sw" style="background:${colorOf[s]}"></span>${escapeHtml(shortName(s))}</span><b>${Math.round((probs[s]||0)*100)}%</b></div>`
-    ).join("");
-    tip.style.display = "block";
-    const left = Math.min(e.clientX - rect.left + 14, rect.width - 150);
-    tip.style.left = Math.max(0,left) + "px";
-    tip.style.top = (e.clientY - rect.top + 12) + "px";
-  });
-  svg.addEventListener("mouseleave", ()=> tip.style.display="none");
-}
-
-// ---- Solve (SSE) ------------------------------------------------------------
-function solve() {
-  stop();
-  steps = []; currentT = 0; liveFollow = true;
-  $("message").textContent = ""; $("message").className = "msg";
-  $("story").innerHTML = ""; $("dataTable").querySelector("tbody").innerHTML = "";
-  $("cost").textContent = "$0.000000";
-
-  const mode = $("mode").value;
-  let endpoint, params, runLabel = "story";
-  if (mode === "book") {
-    const book = $("book").value;
-    if (!book) { setPhase("Pick a book first (ingest one and build its ledger via the CLI).", "err"); return; }
-    params = new URLSearchParams({
-      book,
-      limit: $("limit").value || "40",
-      mock: $("mock").checked ? "1" : "0",
-      candidate_set: $("candidateSet").value,
-    });
-    endpoint = "/api/solve_book?";
-    const opt = $("book").options[$("book").selectedIndex];
-    runLabel = opt ? opt.text : book;
-  } else {
-    const url = $("url").value.trim();
-    if (!url) { setPhase("Enter a story URL first.", "err"); return; }
-    params = new URLSearchParams({
-      url,
-      limit: $("limit").value || "40",
-      mock: $("mock").checked ? "1" : "0",
-    });
-    const sus = $("suspects").value.trim();
-    if (sus) params.set("suspects", sus);
-    endpoint = "/api/solve?";
-    try { runLabel = new URL(url).pathname.split('/').pop(); } catch(_) {}
-  }
-
-  $("solve").disabled = true; $("stop").disabled = false;
-  $("play").disabled = true; $("scrub").disabled = true;
-  setPhase("Connecting…", "on");
-
-  es = new EventSource(endpoint + params.toString());
-
-  es.addEventListener("meta", (ev) => {
-    const m = JSON.parse(ev.data);
-    unit = m.unit || (mode === "book" ? "passage" : "paragraph");
-    suspects = m.suspects || [];
-    assignColors(suspects);
-    renderLegend(); buildBars(); rebuildTableHead(); renderCurve();
-    $("model").textContent = m.model + (m.mock ? " (mock)" : "");
-    $("scrub").max = m.n_paragraphs;
-    $("choiceNote").textContent = "suspects from " + m.choices_source + " · question: “" + m.question + "”";
-    setPhase(`Reading “${runLabel}” — ${m.n_paragraphs} ${unit}s…`, "on");
-  });
-
-  es.addEventListener("querying", (ev) => {
-    const d = JSON.parse(ev.data);
-    setPhase(`🔍 JEV is reading ${unit} ${d.t} and deciding…`, "on");
-  });
-
-  es.addEventListener("step", (ev) => {
-    const st = JSON.parse(ev.data);
-    steps.push(st);
-    appendTableRow(st);
-    $("scrub").value = st.t;
-    if (liveFollow) renderAt(st.t);
-    else { renderCurve(); renderStatus(); }
-  });
-
-  es.addEventListener("warn", (ev) => {
-    const d = JSON.parse(ev.data);
-    $("message").textContent = "⚠ " + d.message; $("message").className = "msg";
-  });
-
-  es.addEventListener("error", (ev) => {
-    let msg = "Stream error.";
-    try { msg = JSON.parse(ev.data).message; } catch(_){}
-    $("message").textContent = "✖ " + msg; $("message").className = "msg err";
-    setPhase("Error", "err");
-    finishRun();
-  });
-
-  es.addEventListener("done", (ev) => {
-    const d = JSON.parse(ev.data);
-    setPhase(d.final_answer ? `Solved. JEV's verdict: ${d.final_answer}` : "Finished.", "done");
-    finishRun();
-  });
-
-  es.onerror = () => {
-    // Network drop / server closed the stream unexpectedly.
-    if (es && es.readyState === EventSource.CLOSED) finishRun();
-  };
-}
-
-function finishRun() {
-  if (es) { es.close(); es = null; }
-  $("solve").disabled = false; $("stop").disabled = true;
-  if (steps.length > 0) {
-    $("play").disabled = false; $("scrub").disabled = false;
-    $("scrub").max = steps.length;
-    liveFollow = false;
-  }
-}
-
-function stop() {
-  if (es) { es.close(); es = null; }
-  if (playTimer) { clearInterval(playTimer); playTimer = null; $("play").textContent = "▶ Replay"; }
-  $("solve").disabled = false; $("stop").disabled = true;
-}
-
-// ---- Replay + scrub ---------------------------------------------------------
-function togglePlay() {
-  if (playTimer) { clearInterval(playTimer); playTimer = null; $("play").textContent = "▶ Replay"; return; }
-  if (steps.length === 0) return;
-  let t = (currentT >= steps.length) ? 1 : currentT + 1;
-  $("play").textContent = "❚❚ Pause";
-  renderAt(t); $("scrub").value = t;
-  playTimer = setInterval(() => {
-    if (t >= steps.length) { clearInterval(playTimer); playTimer=null; $("play").textContent="▶ Replay"; return; }
-    t++; renderAt(t); $("scrub").value = t;
-  }, 550);
-}
-
-// ---- Utils ------------------------------------------------------------------
-function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
-
-// ---- Book catalog + mode toggle ---------------------------------------------
-async function loadBooks() {
-  const sel = $("book");
-  try {
-    const r = await fetch("/api/books");
-    const data = await r.json();
-    const books = (data.books || []).filter(b => b.has_mock_ledger || b.has_real_ledger);
-    if (books.length === 0) {
-      sel.innerHTML = '<option value="">No books with a ledger yet — build one via the CLI</option>';
-      return;
-    }
-    sel.innerHTML = books.map(b => {
-      const led = b.has_real_ledger ? "real ledger" : "mock ledger";
-      const title = b.title || b.book_id;
-      return `<option value="${escapeHtml(b.book_id)}">${escapeHtml(title)} — ${b.n_chunks} passages [${led}]</option>`;
-    }).join("");
-  } catch (e) {
-    sel.innerHTML = '<option value="">Could not load books</option>';
-  }
-}
-
-function applyMode() {
-  const isBook = $("mode").value === "book";
-  $("bookControls").style.display = isBook ? "" : "none";
-  $("paragraphControls").style.display = isBook ? "none" : "";
-}
-
-// ---- Wire up ----------------------------------------------------------------
-$("mode").addEventListener("change", applyMode);
-applyMode();
-loadBooks();
-$("logScale").addEventListener("change", (e) => { logScale = e.target.checked; renderCurve(); });
-$("solve").addEventListener("click", solve);
-$("stop").addEventListener("click", () => { stop(); setPhase("Stopped.", ""); });
-$("play").addEventListener("click", togglePlay);
-$("scrub").addEventListener("input", (e) => {
-  liveFollow = false;
-  if (playTimer){ clearInterval(playTimer); playTimer=null; $("play").textContent="▶ Replay"; }
-  renderAt(parseInt(e.target.value));
-});
-setupTooltip();
-</script>
+<script src="/static/app.js"></script>
 </body>
 </html>

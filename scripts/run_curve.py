@@ -60,6 +60,21 @@ def _completed_steps(out_path: Path) -> set[int]:
     return done
 
 
+def _first_overflow(paragraphs: list[str], question: str, choices) -> int | None:
+    """First paragraph t whose state (paragraphs 1..t + question + choices) would
+    exceed Jev's input limit, or None if the whole run fits. Approximate (same
+    token proxy as estimate_cost.py), and makes no API calls."""
+    from detective_jev.tokens import count_tokens
+
+    overhead = count_tokens(question) + count_tokens(json.dumps(choices)) + 20
+    prefix = 0
+    for t in range(1, len(paragraphs) + 1):
+        prefix += count_tokens(paragraphs[t - 1])
+        if prefix + overhead > config.MAX_INPUT_TOKENS:
+            return t
+    return None
+
+
 def run_book(args: argparse.Namespace) -> None:
     """Book mode: step through chunks with the ledger as history."""
     from detective_jev import inference, storage
@@ -147,6 +162,15 @@ def main() -> None:
     # Built once, up front (friend-owned content).
     choices = friend_stubs.build_choices(paragraphs)
     question = friend_stubs.build_question()
+
+    overflow_t = _first_overflow(paragraphs, question, choices)
+    if overflow_t is not None:
+        print(f"Paragraph mode can't finish this text: at paragraph {overflow_t} of {n} the "
+              f"state would pass Jev's {config.MAX_INPUT_TOKENS:,}-token limit (paragraph mode "
+              "resends paragraphs 1..t every step).")
+        print("Refusing to start rather than fail partway after spending. Use book mode instead "
+              "(see SETUP.md, Part C), or pass --limit to run only the first part.")
+        raise SystemExit(1)
 
     done = _completed_steps(out_path)
     if done:

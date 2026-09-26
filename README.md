@@ -71,24 +71,22 @@ cap of 200 paragraphs and the 32k-token prefix guard protect against runaway cos
 
 ## Quick start
 
-See [SETUP.md](SETUP.md) for accounts, keys, credits, and spending limits.
-Once set up:
+Full walkthrough, including accounts, keys, and adding new books: [SETUP.md](SETUP.md).
+Once your OpenRouter key is in `.env`:
 
 ```bash
 uv sync
-# 1. parse a story
-python -m detective_jev.story https://www.gutenberg.org/files/1661/1661-0.txt holmes
-# 2. estimate cost BEFORE spending anything
-python scripts/estimate_cost.py data/parsed/holmes.json
-# 3. free dry run to check the pipeline end-to-end
-python scripts/run_curve.py data/parsed/holmes.json --mock --limit 10
-# 4. one real call to confirm billing
-python scripts/smoke_test.py
-# 5a. the live demo website (mock by default)
-python scripts/serve.py            # open http://127.0.0.1:8000
-# 5b. or a batch run to JSONL
-python scripts/run_curve.py data/parsed/holmes.json
+uv run python scripts/smoke_test.py                           # one real call (~free) to confirm billing
+uv run python scripts/run_curve.py --book pg69087 --mock --limit 5   # free dry run, included novel
+uv run python scripts/run_curve.py --book pg69087             # real run, ~$0.04
+uv run python scripts/serve.py                                # browser demo: Book mode, untick Mock
 ```
+
+Adding a book: `cli ingest <html-url>` → `cli roster <id>` → `cli ledger <id> --real`
+→ `run_curve.py --book <id>` (run each as `uv run python -m detective_jev.cli ...`).
+Use **book mode** for anything longer than a short story. The older paragraph
+mode resends the whole text so far on every step and hits Jev's 32K-token limit
+around 25,000 words.
 
 > Ownership: the Jev client, environment, billing/keys, and repo structure are
 > maintained separately from the **decision design** (suspect choices, question

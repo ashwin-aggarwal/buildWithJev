@@ -57,3 +57,14 @@ def test_uncompressed_debug_flag(book, monkeypatch):
     assert (config.BOOKS_DIR / "pg99999.json").exists()
     assert not (config.BOOKS_DIR / "pg99999.json.gz").exists()
     assert storage.load_book("pg99999") == book
+
+
+def test_inline_markup_does_not_split_words():
+    html = ('<html><body><h2>I.</h2><p><span class="dropcap">T</span>o Sherlock Holmes she is '
+            'always <i>the</i> woman.<br>A new<span class="pagenum" id="Page_2">2</span> line<br/>'
+            'here.<a class="fnanchor" href="#fn1">[1]</a></p><p>\u201c<i>Remorse</i>,\u201d she said.</p>'
+            '</body></html>')
+    assert parse_html(html)["paragraphs"] == [
+        "To Sherlock Holmes she is always the woman. A new line here.",
+        "\u201cRemorse,\u201d she said.",
+    ]

@@ -283,8 +283,57 @@ _SSE_HEADERS = {
 
 @app.get("/")
 def index() -> Response:
+    """The run viewer: replays saved book-mode runs (no API calls)."""
     html = (_VIZ_DIR / "index.html").read_text(encoding="utf-8")
     return Response(html, mimetype="text/html")
+
+
+@app.get("/live")
+def live() -> Response:
+    """The original live-solve page (streams real or mock Jev calls)."""
+    html = (_VIZ_DIR / "live.html").read_text(encoding="utf-8")
+    return Response(html, mimetype="text/html")
+
+
+_STATIC = {"app.js": "text/javascript", "app.css": "text/css"}
+
+
+@app.get("/static/<name>")
+def static_file(name: str) -> Response:
+    if name not in _STATIC:
+        return Response("not found", status=404)
+    return Response((_VIZ_DIR / name).read_text(encoding="utf-8"), mimetype=_STATIC[name])
+
+
+def _json(payload: Any, status: int = 200) -> Response:
+    return Response(json.dumps(payload, ensure_ascii=False), status=status, mimetype="application/json")
+
+
+@app.get("/api/runs")
+def api_runs() -> Response:
+    from .viewer import list_runs
+
+    return _json({"runs": list_runs()})
+
+
+@app.get("/api/run/<name>")
+def api_run(name: str) -> Response:
+    from .viewer import ViewerError, load_run
+
+    try:
+        return _json(load_run(name))
+    except ViewerError as exc:
+        return _json({"error": str(exc)}, 404)
+
+
+@app.get("/api/cost/<name>")
+def api_cost(name: str) -> Response:
+    from .viewer import ViewerError, cost_inputs
+
+    try:
+        return _json(cost_inputs(name))
+    except ViewerError as exc:
+        return _json({"error": str(exc)}, 404)
 
 
 @app.get("/api/books")

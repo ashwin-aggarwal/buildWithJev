@@ -1,143 +1,284 @@
 # SETUP
 
-Everything needed to run the Whodunit Curve. Steps marked **[YOU — manual]** are
-account/billing steps that can't be automated for you; do those yourself and the
-rest of the pipeline follows.
+This guide takes you from a fresh clone to watching Jev read a detective novel
+and guess the killer. Part A is one-time setup. Part B runs the book that is
+already included. Part C adds a new book.
+
+Steps marked **[YOU]** need a person (accounts, payment). Everything else is a
+command you copy and paste. All commands are run from the repo root.
 
 ---
 
-## 0. Prerequisites
+## Before you start: two ways to feed Jev a story
 
-- Python 3.10+ (this repo pins 3.12 via `.python-version`).
-- [uv](https://docs.astral.sh/uv/) for dependency management. Install:
-  ```bash
-  curl -LsSf https://astral.sh/uv/install.sh | sh
-  ```
+| | **Book mode** (use this) | Paragraph mode (old) |
+|---|---|---|
+| What Jev sees at step *t* | A compact **ledger** of passages 1..t-1, plus passage *t* in full | The full text of paragraphs 1..t, every time |
+| Works for | Whole novels (tested: 70,000 words) | Short stories only (roughly 25,000 words max) |
+| Cost for a 70k-word novel | about **$0.08** total | Fails partway |
+| Commands | `detective_jev.cli` + `run_curve.py --book` | `detective_jev.story` + `run_curve.py <file>` |
 
-## 1. Install dependencies
+**Why paragraph mode fails on long texts.** It resends *everything so far* at
+every step, so the input keeps growing. Jev accepts at most 32,000 tokens.
+*The Adventures of Sherlock Holmes* splits into 1,973 paragraphs and passes that
+limit around paragraph 470, after spending about $0.30. Book mode stays small
+because each passage is compressed once into a short ledger entry. The largest
+input for the included 70k-word novel is about 14,000 tokens.
+
+---
+
+## Part A — One-time setup
+
+### A1. Install Python tools
+
+You need Python 3.10+ (the repo pins 3.12) and [uv](https://docs.astral.sh/uv/):
 
 ```bash
-uv sync
+curl -LsSf https://astral.sh/uv/install.sh | sh   # installs uv (skip if you have it)
+uv sync                                            # installs this project's dependencies
 ```
 
-This creates a `.venv/` and installs the pinned deps from `pyproject.toml`.
-Run scripts either with `uv run python scripts/...` or after `source .venv/bin/activate`.
+Run every command below with `uv run ...`. It uses the project's environment
+automatically.
 
-## 2. Get Jev access  **[YOU — manual]**
+### A2. Get an OpenRouter account with Jev access  **[YOU]**
 
-Jev is reached through **OpenRouter's Decisions API** (our default transport).
+1. Sign up at <https://openrouter.ai>.
+2. Open the Jev model page, <https://openrouter.ai/typesafe/jev-1.13>. If it
+   asks you to request access, do so and wait for approval.
 
-1. Create an account at <https://openrouter.ai>.
-2. Jev may be behind early-access/a waitlist. Check the model page
-   <https://openrouter.ai/typesafe/jev-1.13>. If it says "request access" or
-   similar, join the waitlist and wait for approval before continuing.
-   - Alternative transport: TypeSafe's own API (<https://api.typesafe.ai>), which
-     your friend's Colab notebook already uses via a `TYPESAFE_API_KEY`. To use
-     it instead, set `JEV_PROVIDER=typesafe` and `TYPESAFE_API_KEY=...` in `.env`.
+### A3. Create an API key, add credit, set a limit  **[YOU]**
 
-## 3. Create an OpenRouter API key  **[YOU — manual]**
+1. Create a key at <https://openrouter.ai/keys> and copy it now. You won't see
+   it again.
+2. Add a few dollars of credit. A whole novel costs well under $1.
+3. Set a **spending limit** so a bug can't drain your balance. You can set it on
+   the key itself (<https://openrouter.ai/keys>) or for the whole account
+   (<https://openrouter.ai/settings/credits>).
 
-1. Go to <https://openrouter.ai/keys>.
-2. Create a new key. Copy it now (you won't see it again).
-
-## 4. Add credits and set a spending limit  **[YOU — manual]**
-
-1. Add a small amount of credit (a few dollars is plenty — a full short-story run
-   is typically well under a dollar; run the estimator in step 7 first).
-2. **Set a spending limit** so a bug can't drain the balance:
-   - Per-key limit: on the key's settings at <https://openrouter.ai/keys>.
-   - Account limit: in <https://openrouter.ai/settings/credits>.
-
-## 5. Fill in `.env`
+### A4. Put the key in `.env`
 
 ```bash
 cp .env.example .env
 ```
 
-Open `.env` and paste your key:
-
-```
-OPENROUTER_API_KEY=sk-or-...
-```
-
-`.env` is gitignored — **never commit it, and never paste a key into code, notes,
-or a commit message.**
-
-## 6. Parse a story
+Open `.env` and fill in:
 
 ```bash
-uv run python -m detective_jev.story https://www.gutenberg.org/files/1661/1661-0.txt holmes
+OPENROUTER_API_KEY=sk-or-...        # required
+EXTRACTION_PROVIDER=openrouter      # lets Part C's character list use the same key
 ```
 
-That downloads to `data/raw/holmes.txt` (gitignored) and writes
-`data/parsed/holmes.json`. Open the JSON and sanity-check the paragraph split.
+The second line matters only when you add new books (Part C). Without it, the
+character-list step expects an Anthropic key (`ANTHROPIC_API_KEY`) instead.
 
-> Note: `1661-0.txt` is *The Adventures of Sherlock Holmes* (a whole collection).
-> For a single short story you'll want to trim `data/parsed/holmes.json` to just
-> the story's paragraphs, or point at a single-story text. Choosing the story and
-> its boundaries is a content decision — coordinate with your friend.
+`.env` is gitignored. **Never commit it, and never paste a key into code,
+notes, or a commit message.**
 
-## 7. Estimate cost BEFORE any real run
+### A5. Check that everything works
 
 ```bash
-uv run python scripts/estimate_cost.py data/parsed/holmes.json
+uv run python scripts/smoke_test.py --mock   # free: checks the code runs
+uv run python scripts/smoke_test.py          # ONE real Jev call, a tiny fraction of a cent
+uv run pytest -q                             # optional: the test suite (free, no network)
 ```
 
-This prints estimated total input tokens and dollar cost (input tokens grow
-~quadratically because we resend paragraphs `1..t` every step), and **warns if
-the longest prefix exceeds Jev's 32,000-token input limit**. If it warns, the
-per-paragraph context needs trimming/summarizing (friend's `build_context`).
-
-## 8. Free dry run (no spend)
-
-```bash
-uv run python scripts/run_curve.py data/parsed/holmes.json --mock --limit 10
-```
-
-Confirms the whole pipeline works end-to-end using fake distributions.
-
-## 9. Smoke test — ONE real call  **[needs step 5 done]**
-
-```bash
-uv run python scripts/smoke_test.py
-```
-
-Makes a single real Jev call with a toy locked-room scenario and prints the
-probabilities, confidence, latency, input tokens, resolved model id, and cost.
-If this prints sensible probabilities, your key and billing work.
-
-## 10. The real run
-
-```bash
-uv run python scripts/run_curve.py data/parsed/holmes.json
-```
-
-Writes one JSON row per paragraph to `data/results/holmes.jsonl`. Responses are
-cached on disk (`.cache/jev/`), so reruns are free and an interrupted run
-resumes where it stopped.
-
-## 11. The live demo website
-
-```bash
-uv run python scripts/serve.py       # then open http://127.0.0.1:8000
-```
-
-Paste a Gutenberg "Plain Text UTF-8" link and press **Solve** to watch JEV read
-the story and update its guess live. **Mock mode is on by default (free).** Untick
-it for real calls (needs steps 3–5 done). The key stays on the server; it is never
-sent to the browser. Cost is shown live, with a 200-paragraph cap and the 32k
-prefix guard as safety rails.
+If the real smoke test prints probabilities for three suspects, your key and
+billing work.
 
 ---
 
-## Where a human is required
+## Part B — Run the included book
 
-| Step | Why it needs you |
-|------|------------------|
-| 2 | Jev access / waitlist approval |
-| 3 | Creating the OpenRouter API key |
-| 4 | Adding credits + setting a spending limit |
-| 5 | Pasting the key into `.env` |
-| 9 | Confirming you're OK to make the one real (paid) call |
+The repo already has *The Murder of Roger Ackroyd* (Agatha Christie, book id
+`pg69087`) ingested, with its character list and ledger built. Only the final
+"guess the killer" pass is left to run.
 
-Everything else is automated by the scripts above.
+### B1. Free dry run
+
+```bash
+uv run python scripts/run_curve.py --book pg69087 --mock --limit 5
+```
+
+This uses fake random probabilities to check the plumbing. It spends nothing.
+The mock curve means nothing, so don't read into it.
+
+### B2. The real run (about $0.04, a minute or two)
+
+```bash
+uv run python scripts/run_curve.py --book pg69087
+```
+
+- Makes 133 Jev calls, one per passage.
+- Writes one line per passage to `data/results/pg69087__<run_id>.jsonl`.
+- If it stops halfway, run the same command again. It resumes where it
+  stopped, and repeated calls are served free from the cache
+  (`.cache/jev.sqlite`).
+
+Options:
+- `--candidate-set suspects_only` limits the options to characters marked
+  `is_suspect: true` in `data/rosters/pg69087.yaml`. Nobody is marked yet, so
+  set at least two first.
+- `--condition <label>` is a free-text tag for comparing runs.
+
+### B3. Watch it in the browser
+
+```bash
+uv run python scripts/serve.py      # then open http://127.0.0.1:8000
+```
+
+The page replays any saved run from B2. It makes no API calls and costs
+nothing.
+
+- **Run tab.** Suspect bars on the left, the probability curve in the middle,
+  and the text Jev is reading on the right. Click or drag anywhere on the
+  curve to jump to that chunk. Press **Space** to play or pause, and **← →**
+  to step (hold Shift to move 10 at a time). Hover a line to highlight that
+  character everywhere, and click legend entries to hide lines.
+- **Cost analysis tab.** What the run cost with Jev, and what the same calls
+  would cost on OpenAI, Anthropic, and DeepSeek models. This is list-price
+  arithmetic only, and prices are in `config/model_prices.yaml`.
+
+The old live-solve page (runs Jev as you watch; untick "Mock mode" for real
+results) is still at <http://127.0.0.1:8000/live>. The key stays on the server
+and is never sent to the browser.
+
+---
+
+## Part C — Add a new book
+
+Budget about **$0.10 per 70,000 words**, plus a few cents for the character
+list. Each step can be re-run safely: finished work is kept and not
+re-bought.
+
+### C1. Find the book's HTML page
+
+On Project Gutenberg, open the book and copy the link to **"Read online
+(web)"**. It looks like
+`https://www.gutenberg.org/ebooks/69087.html.images` or
+`https://www.gutenberg.org/files/69087/69087-h/69087-h.htm`.
+**Plain-text (.txt) links do not work here.**
+
+Other websites work too if the whole book is on one page. See
+[Which websites work?](#which-websites-work) below.
+
+### C2. Ingest: download and split into passages (free)
+
+```bash
+uv run python -m detective_jev.cli ingest <html-url>
+```
+
+This prints a **book id**, such as `pg1661`. Use it in the next steps. The
+book is split into ~500-word passages that never cut a paragraph in half. To
+check what was kept, run
+`uv run python -m detective_jev.cli inspect <book_id> --chunk 1`.
+
+### C3. Build the character list (one LLM call, a few cents)
+
+```bash
+uv run python -m detective_jev.cli roster <book_id>
+```
+
+This sends the whole book to a language model once and writes
+`data/rosters/<book_id>.yaml`. **Open that file and check it**:
+- Fix any wrong nicknames (`aliases`).
+- Set `is_suspect: true` for the characters you'd call suspects.
+- Read the warnings the command printed. They flag possible missed or
+  merged characters.
+
+Once this file exists, it is the source of truth. The model is never asked
+again for this book. You can re-check your edits with
+`uv run python -m detective_jev.cli validate <book_id>`.
+
+### C4. Build the ledger (about $0.035 per 70k words)
+
+```bash
+uv run python -m detective_jev.cli ledger <book_id>          # free mock version first
+uv run python -m detective_jev.cli ledger <book_id> --real   # the real one: one Jev call per passage
+```
+
+Each passage is compressed once, into Jev's answers plus one sentence it
+picks. If you later edit the character names or aliases, the command refuses
+to mix old and new entries. Rebuild with `--real --force` when that happens.
+
+### C5. Run it
+
+Same as Part B, with your book id:
+
+```bash
+uv run python scripts/run_curve.py --book <book_id>
+```
+
+---
+
+## Which websites work?
+
+**Any HTML page where the book's text is in normal paragraph tags (`<p>`) on a
+single page.** Project Gutenberg is the tested case. Other sites often work
+too, with these limits:
+
+- **Gutenberg extras are removed automatically.** This covers the license
+  header and footer, transcriber's notes, and the table of contents. On
+  other sites, stray menus, captions, or comments inside `<p>` tags will end
+  up in the text. Check with `cli inspect`.
+- **Chapter headings** are read from `<h1>`–`<h6>` tags. Sites that style
+  headings some other way still work, but chapters come out unnamed.
+- **One page only.** A site that puts each chapter on its own page is only
+  partly ingested: you get the one page you linked.
+- **No JavaScript-rendered sites.** The page is downloaded as-is, without
+  running scripts.
+- **Text with no `<p>` tags** (only `<br>` line breaks, or plain `.txt`)
+  finds no paragraphs and stops with "No body paragraphs found".
+- **Book ids.** Gutenberg books get `pg<number>`. Anything else gets a name
+  made from the title plus a short code based on the text. The same book
+  from two websites gets the same id.
+
+Downloaded pages are cached in `data/raw/html/`, so each URL is fetched only
+once.
+
+---
+
+## Paragraph mode (short stories only)
+
+Use this only for a single short story. For anything longer, use book mode.
+
+```bash
+uv run python -m detective_jev.story <gutenberg-plain-text-url> <name>   # parse
+uv run python scripts/estimate_cost.py data/parsed/<name>.json           # ALWAYS check first
+uv run python scripts/run_curve.py data/parsed/<name>.json --mock --limit 10
+uv run python scripts/run_curve.py data/parsed/<name>.json               # real run
+```
+
+If `estimate_cost.py` prints a WARNING about the 32,000-token limit, the text
+is too long for paragraph mode. `run_curve.py` now also refuses to start in
+that case, instead of failing partway after spending money.
+
+---
+
+## Troubleshooting
+
+| Message | What it means / what to do |
+|---|---|
+| `Paragraph mode can't finish this text` | Too long for paragraph mode. Use book mode (Part C). |
+| `Request too large for Jev` | One call would pass Jev's limit. In book mode this should not happen for normal novels; report it. |
+| `No body paragraphs found` | The URL isn't an HTML page with `<p>` paragraphs. Use the HTML ("Read online") link, not `.txt`. |
+| `OPENROUTER_API_KEY is not set` | Step A4. |
+| `ANTHROPIC_API_KEY is not set` | Add `EXTRACTION_PROVIDER=openrouter` to `.env` (step A4), or add an Anthropic key. |
+| `No roster at ...` | Run step C3 for that book. |
+| `Ledger for ... was built with different inputs` | The character list or questions changed since the ledger was built. Rebuild with `cli ledger <book_id> --real --force`. |
+| `suspects_only needs at least 2 characters` | Mark suspects with `is_suspect: true` in the roster YAML. |
+| The curve in the browser is flat or random | You are viewing a mock run (yellow banner), or "Mock mode" is ticked on `/live`. |
+| The viewer says "No saved runs yet" | Run step B2 (or C5) first; the viewer only replays saved results. |
+
+---
+
+## Where a person is required
+
+| Step | Why |
+|---|---|
+| A2 | Jev access (possible waitlist) |
+| A3 | Creating the key, paying, setting a spending limit |
+| A4 | Pasting the key into `.env` |
+| C3 | Checking the character list and marking suspects |
+
+Everything else is automated by the commands above.
