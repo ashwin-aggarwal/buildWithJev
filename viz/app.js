@@ -14,6 +14,7 @@
 const $ = (id) => document.getElementById(id);
 const SLOTS = 8;                 // categorical colour slots (fixed order, never cycled)
 const BASE_STEPS_PER_SEC = 2;    // 1x speed
+const BAR_TOP = 7;               // bars shown by default (the chart always plots everyone)
 const LOG_FLOOR = 0.01;          // Jev reports probabilities to 2 decimals
 
 const state = {
@@ -29,6 +30,7 @@ const state = {
   hidden: new Set(),  // candidate indices whose line is hidden
   fullRun: false,
   showText: false,    // right-hand text panel (remembered per browser)
+  allBars: false,     // bars: everyone, or just the top BAR_TOP (remembered per browser)
   log: false,
   tab: "run",
 };
@@ -75,9 +77,7 @@ async function getJSON(url) {
 async function init() {
   wireControls();
   wireAdd();
-  let savedText = false;
-  try { savedText = localStorage.getItem("dj.showText") === "1"; } catch (_) {}
-  setShowText(savedText);
+  setShowText(readPref("dj.showText"));
   $("runsel").addEventListener("change", () => loadRun($("runsel").value));
   let runs;
   try {
@@ -122,6 +122,7 @@ async function loadRun(file) {
   $("view-cost").hidden = state.tab !== "cost";
   $("empty").hidden = true;
   buildBars();
+  setAllBars(readPref("dj.allBars"));
   buildLegend();
   setT(1, { instant: true });
   drawChart();
@@ -148,6 +149,9 @@ function prepareRun(run) {
     else { c.kind = "other"; c.color = "var(--other)"; }
   });
   run.byT = new Map(run.steps.map((s) => [s.t, s]));
+  // First step where Jev itself judges the culprit revealed (>= 50%).
+  const rev = run.steps.find((s) => s.revealed != null && s.revealed >= 0.5);
+  run.revealT = rev ? rev.t : null;
   run.chunkByT = new Map(run.chunks.map((c) => [c.t, c]));
   run.maxT = run.steps.length;
 }
@@ -212,9 +216,11 @@ function buildBars() {
   const box = $("bars");
   box.innerHTML = state.run.candidates.map((c) => `
     <div class="bar-row" data-i="${c.i}">
+      <span class="rank"></span>
       <span class="name" title="${esc(label(c))}">${esc(label(c))}</span>
       <span class="track"><span class="fill" style="background:${c.color}${c.kind === "none" ? ";opacity:.7" : ""}"></span></span>
       <span class="val"></span>
+      <span class="delta"></span>
     </div>`).join("");
   for (const row of box.children) {
     const i = Number(row.dataset.i);
@@ -230,18 +236,36 @@ function updateBars(instant) {
   const rows = [...box.children];
   const order = run.candidates.map((c) => c.i)
     .sort((a, b) => (step.p[b] - step.p[a]) || (a - b));
-  const rowH = Math.max(20, Math.min(30, Math.floor(box.clientHeight / run.candidates.length) || 24));
+  // Only the top BAR_TOP rows are shown unless "Show all" is on. Rows leaving
+  // the top slide down into the last slot and fade out; rows entering fade in.
+  const shown = state.allBars ? order.length : Math.min(BAR_TOP, order.length);
+  // Top-N mode is a leaderboard: the rows share the whole column height.
+  const big = !state.allBars;
+  box.classList.toggle("big", big);
+  const rowH = big
+    ? Math.max(58, Math.floor(box.clientHeight / shown) || 72)
+    : Math.max(20, Math.min(30, Math.floor(box.clientHeight / order.length) || 24));
+  const prev = run.byT.get(state.t - 1);
   if (instant) box.style.setProperty("--dur", "0ms");
   order.forEach((ci, rank) => {
     const row = rows[ci];
+    const visible = rank < shown;
     row.style.height = `${rowH}px`;
-    row.style.transform = `translateY(${rank * rowH}px)`;
+    row.style.transform = `translateY(${Math.min(rank, shown - 1) * rowH}px)`;
+    row.classList.toggle("off", !visible);
     row.querySelector(".fill").style.width = `${(step.p[ci] * 100).toFixed(2)}%`;
     row.querySelector(".val").textContent = pct(step.p[ci]);
+    row.querySelector(".rank").textContent = rank + 1;
+    // Change since the previous chunk, in percentage points (Jev reports whole percents).
+    const d = prev ? Math.round((step.p[ci] - prev.p[ci]) * 100) : 0;
+    const delta = row.querySelector(".delta");
+    delta.textContent = d >= 1 ? `▲ ${d} pts` : d <= -1 ? `▼ ${-d} pts` : "";
+    delta.dataset.dir = d >= 1 ? "up" : d <= -1 ? "down" : "flat";
+    row.classList.toggle("zero", step.p[ci] < 0.005);   // not suspected right now
   });
   // Rows are absolutely positioned; a spacer gives the box its scroll height.
   const spacer = box.querySelector(".spacer") || box.appendChild(Object.assign(document.createElement("div"), { className: "spacer" }));
-  spacer.style.height = `${order.length * rowH}px`;
+  spacer.style.height = `${shown * rowH}px`;
   if (instant) requestAnimationFrame(() => box.style.removeProperty("--dur"));
 }
 
@@ -298,6 +322,11 @@ function drawChart() {
   }
   out += `</g>`;
   out += `<line class="hover-x" id="hover-x" y1="${M.t}" y2="${h - M.b}" visibility="hidden"/>`;
+  if (run.revealT) {
+    const rx = x(run.revealT);
+    out += `<g id="reveal-mark" visibility="hidden"><line class="reveal-line" x1="${rx}" x2="${rx}" y1="${M.t}" y2="${h - M.b}"/>` +
+           `<text class="reveal-label" x="${rx + 5}" y="${M.t + 10}">Revealed</text></g>`;
+  }
   out += `<line class="marker" id="marker" y1="${M.t - 4}" y2="${h - M.b}"/>`;
   out += `<g id="dots">` + run.candidates.filter((c) => c.kind === "series")
     .map((c) => `<circle class="dot" data-i="${c.i}" r="4.5" fill="${c.color}"/>`).join("") + `</g>`;
@@ -330,6 +359,9 @@ function renderPlayhead() {
   const marker = $("marker");
   marker.setAttribute("x1", mx);
   marker.setAttribute("x2", mx);
+  const reveal = $("reveal-mark");
+  if (reveal) reveal.setAttribute("visibility",
+    state.fullRun || state.tf >= state.run.revealT ? "visible" : "hidden");   // no spoiler before it happens
   for (const dot of $("dots").children) {
     dot.setAttribute("cx", mx);
     dot.setAttribute("cy", yFor(pAt(Number(dot.dataset.i), state.tf)));
@@ -412,10 +444,12 @@ function showTip(t, px, py) {
     .sort((a, b) => step.p[b.i] - step.p[a.i]).slice(0, 5);
   if (state.hover != null && !top.some((c) => c.i === state.hover)) top.push(run.candidates[state.hover]);
   const tip = $("tip");
+  const revealRow = step.revealed != null
+    ? `<div class="tip-foot">Culprit revealed yet? Jev says ${pct(step.revealed)}</div>` : "";
   tip.innerHTML = `<div class="tip-h">Chunk ${t} · click to jump here</div>` + top.map((c) => {
     const name = c.i === state.hover ? `<b>${esc(label(c))}</b>` : esc(label(c));
     return `<div class="tip-r"><span class="key ${c.kind === "none" ? "none" : ""}" style="border-color:${c.color}"></span>${name}<span class="v">${pct(step.p[c.i])}</span></div>`;
-  }).join("");
+  }).join("") + revealRow;
   tip.hidden = false;
   const wrap = $("chartwrap");
   const tw = tip.offsetWidth, th = tip.offsetHeight;
@@ -524,6 +558,22 @@ function renderTextBody() {
   if (shownT !== state.t) { box.scrollTop = 0; shownT = state.t; }
 }
 
+function readPref(key) {
+  try { return localStorage.getItem(key) === "1"; } catch (_) { return false; }
+}
+
+function setAllBars(on) {
+  state.allBars = on;
+  const n = state.run ? state.run.candidates.length : 0;
+  $("bars-scope").textContent = on ? `All ${n || ""}`.trim() : `Top ${BAR_TOP}`;
+  const b = $("barstoggle");
+  b.setAttribute("aria-pressed", String(on));
+  b.textContent = on ? `Show top ${BAR_TOP}` : `Show all${n ? " " + n : ""}`;
+  b.hidden = n > 0 && n <= BAR_TOP;          // nothing to toggle for small casts
+  try { localStorage.setItem("dj.allBars", on ? "1" : "0"); } catch (_) {}
+  if (state.run) updateBars();
+}
+
 function setShowText(on) {
   state.showText = on;
   $("text-panel").hidden = !on;
@@ -607,6 +657,7 @@ function wireControls() {
     if (state.playing) { pause(); play(); }   // picks up the new pace from where it is
   });
   $("texttoggle").addEventListener("click", () => setShowText(!state.showText));
+  $("barstoggle").addEventListener("click", () => setAllBars(!state.allBars));
   $("fullrun").addEventListener("change", (e) => { state.fullRun = e.target.checked; updateChartT(); });
   $("logscale").addEventListener("change", (e) => { state.log = e.target.checked; drawChart(); });
   $("tab-run").addEventListener("click", () => showTab("run"));

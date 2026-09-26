@@ -93,6 +93,12 @@ CHUNK_SIZE_TARGET: int = int(os.getenv("CHUNK_SIZE_TARGET", "500"))
 # MAX_INPUT_TOKENS for the longest question.
 LEDGER_TOKEN_BUDGET: int = int(os.getenv("LEDGER_TOKEN_BUDGET", "26000"))
 
+# How many of the most recent chunks Jev sees as FULL TEXT at each inference
+# step (including the current one). 1 = the original design (notes for
+# 1..t-1, only chunk t in full). 3 = notes for 1..t-3, then chunks t-2..t in
+# full, so a reveal stays readable for a few steps after it happens.
+RAW_WINDOW: int = max(1, int(os.getenv("RAW_WINDOW", "3")))
+
 # Write book/ledger JSON uncompressed (for debugging). Readers handle both.
 WRITE_UNCOMPRESSED: bool = os.getenv("WRITE_UNCOMPRESSED", "0") == "1"
 
@@ -127,7 +133,13 @@ OPENROUTER_EXTRACTION_MODEL: str = os.getenv(
 OPENROUTER_EXTRACTION_CONTEXT_TOKENS: int = int(
     os.getenv("OPENROUTER_EXTRACTION_CONTEXT_TOKENS", "1000000")
 )
-OPENROUTER_EXTRACTION_MAX_OUTPUT_TOKENS: int = 16_000
+OPENROUTER_EXTRACTION_MAX_OUTPUT_TOKENS: int = 32_000
+# Reasoning ("thinking") effort for the extraction model. On OpenRouter, hidden
+# reasoning counts against max_tokens; with reasoning on, DeepSeek V4 Flash can
+# spend the whole budget thinking and return an EMPTY answer. Listing
+# characters needs no deep reasoning, so it is off by default.
+# One of: none, minimal, low, medium, high.
+OPENROUTER_EXTRACTION_REASONING: str = os.getenv("OPENROUTER_EXTRACTION_REASONING", "none")
 
 
 def anthropic_api_key() -> str | None:

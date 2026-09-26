@@ -43,6 +43,10 @@ logger = logging.getLogger("detective_jev.ingest")
 _START = re.compile(r"\*\*\*\s*START OF (THE|THIS) PROJECT GUTENBERG", re.I)
 _END = re.compile(r"\*\*\*\s*END OF (THE|THIS) PROJECT GUTENBERG", re.I)
 _GUTENBERG_ID = re.compile(r"gutenberg\.org/(?:cache/epub|ebooks|files|epub)/(\d+)", re.I)
+# Project Gutenberg Australia: gutenberg.net.au/ebooks13/1302201h.html -> pgau1302201
+_GUTENBERG_AU_ID = re.compile(r"gutenberg\.net\.au/ebooks\d*/(\d+)h?\.(?:html?|txt)", re.I)
+# Site navigation lines ("GO TO Project Gutenberg Australia HOME PAGE") are not story text.
+_SITE_BOILERPLATE = re.compile(r"project gutenberg|gutenberg\.(org|net\.au)", re.I)
 _HEADINGS = {"h1", "h2", "h3", "h4", "h5", "h6"}
 _SKIP_CONTAINER = re.compile(r"transnote|transcriber|tnote|\btoc\b|pg-header|pg-footer|pgheader|pgfooter", re.I)
 
@@ -185,6 +189,8 @@ def parse_html(html: bytes | str) -> dict[str, Any]:
             continue
         if not re.search(r"[A-Za-z]", text):
             continue  # "* * *" separators and the like
+        if len(text.split()) <= 15 and _SITE_BOILERPLATE.search(text):
+            continue  # short site-navigation / credit lines
         paragraphs.append(text)
 
     return {"title": title, "author": author, "paragraphs": paragraphs, "chapters": chapters}
@@ -213,6 +219,9 @@ def make_book_id(url: str, title: str | None, paragraphs: list[str]) -> str:
     m = _GUTENBERG_ID.search(url)
     if m:
         return f"pg{m.group(1)}"
+    m = _GUTENBERG_AU_ID.search(url)
+    if m:
+        return f"pgau{m.group(1)}"
     return f"{_slug(title)}-{text_hash(paragraphs)[:8]}"
 
 

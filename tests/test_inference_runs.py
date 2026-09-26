@@ -35,7 +35,7 @@ def test_both_candidate_sets_run_and_are_recorded(ledger_built, book):
         assert {"t", "answer", "probabilities", "confidence", "latency_ms", "input_tokens", "model",
                 "cost", "cached", "timestamp"} <= set(r)
         assert r["condition"] == "test" and r["book_id"] == "pg99999"
-        assert set(r["inference_answers"]) == {"culprit", "contradicts_prior", "alibi_effect"}
+        assert set(r["inference_answers"]) == {"culprit", "contradicts_prior", "alibi_effect", "culprit_revealed"}
         assert r["answer"] == r["inference_answers"]["culprit"]["value"]
         assert sorted(r["option_order"]["culprit"]) == sorted(r["probabilities"])
 
@@ -70,8 +70,10 @@ def test_posthoc_sidecar_is_per_run_and_reaches_later_state(ledger_built, book, 
     data = storage.read_json(config.LEDGERS_DIR / sidecars[0].name.removesuffix(".gz"))
     assert set(data) == {str(t) for t in range(1, book["n_chunks"] + 1)}
     flagged = [int(k) for k, v in data.items() if v["contradicts_prior"] >= 0.5]
-    if flagged and flagged[0] < book["n_chunks"]:
-        assert "post-hoc: contradicts" in states[flagged[0]]          # shown from step t+1 on
+    w = config.RAW_WINDOW
+    if flagged and flagged[0] + w <= book["n_chunks"]:
+        # chunk f's note appears once f leaves the full-text window: from step f + W on
+        assert "post-hoc: contradicts" in states[flagged[0] + w - 1]
     assert all("post-hoc" not in s for s in states[:1])
     run_book("pg99999", posthoc=False, condition="b")
     assert len(list(config.LEDGERS_DIR.glob("pg99999.posthoc.*.json*"))) == 1   # off by default

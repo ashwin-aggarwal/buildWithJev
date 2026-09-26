@@ -1,0 +1,487 @@
+# Character roster. HAND-EDITABLE and AUTHORITATIVE: once this file exists the
+# extraction API is never called again for this book.
+#   canonical            fullest name; used as the Jev option label
+#   aliases              other exact strings the text uses for this person
+#   is_suspect           set by hand; candidate_set=suspects_only uses these
+#   uncertain            extractor was unsure about this merge/split
+#   first_mention_chunk  DERIVED in code from alias matches; edits are overwritten
+#   evidence             alias -> quote, for checking the extraction
+# Do NOT record who the culprit is here; that belongs in the separate answer key.
+book_id: pgau1302201
+pipeline_version: '2'
+source: openrouter:deepseek/deepseek-v4-flash
+characters:
+- canonical: Hilda Wade
+  aliases:
+  - Nurse Wade
+  - Miss Wade
+  - Hilda
+  - Maisie Yorke-Bannerman
+  - Maisie
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 1
+  evidence:
+    Nurse Wade: Nurse Wade's remarkable insight
+    Miss Wade: Miss Wade, I believe she means it.
+    Hilda: Hilda Wade's gift was so unique
+    Maisie Yorke-Bannerman: You are a brave woman, Maisie Yorke-Bannerman
+    Maisie: Ah, Maisie, my child
+- canonical: Professor Sebastian
+  aliases:
+  - Sebastian
+  - the Professor
+  - the Master
+  - Dr. Sebastian
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 1
+  evidence:
+    Sebastian: to be near Sebastian
+    the Professor: The Professor obtained his first hint
+    the Master: a word of explanation about the Master
+    Dr. Sebastian: introductions to Dr. Sebastian
+- canonical: Hubert Cumberledge
+  aliases:
+  - Dr. Cumberledge
+  - Cumberledge
+  - Hubert
+  - Dr. Hubert Cumberledge
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 3
+  evidence:
+    Dr. Cumberledge: It is no use, Dr. Cumberledge
+    Cumberledge: Cumberledge, we must proceed to perform the miracle.
+    Hubert: Dear Hubert, I cannot help it
+    Dr. Hubert Cumberledge: Dr. Hubert Ford Cumberledge
+- canonical: Mrs. Mallet
+  aliases:
+  - Lina
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 3
+  evidence:
+    Lina: Lina, your brother was brought up in the West Country
+    Mrs. Mallet: Mrs. Mallet shook her head and smiled.
+- canonical: Hugo Le Geyt
+  aliases:
+  - Le Geyt
+  - Hugo
+  - Mr. Le Geyt
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 3
+  evidence:
+    Le Geyt: Le Geyt met us in the hall
+    Hugo: Hugo is one of my oldest and dearest friends
+    Mr. Le Geyt: Mr. Le Geyt will have murdered her!
+    Hugo Le Geyt: Hugo Le Geyt, with his frank boyish nature
+- canonical: Mrs. Le Geyt
+  aliases:
+  - Clara
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 31
+  evidence:
+    Clara: Clara, dear, shall we go in to lunch?
+    Mrs. Le Geyt: Mrs. Le Geyt, in a pretty cloth dress
+- canonical: Daphne Tepping
+  aliases:
+  - Daphne
+  - Miss Tepping
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 14
+  evidence:
+    Daphne: Daphne is a very pretty girl
+    Miss Tepping: Miss Tepping could possibly care for me
+    Daphne Tepping: Daphne Tepping, promoted.
+- canonical: Cecil Holsworthy
+  aliases:
+  - Mr. Cecil Holsworthy
+  - Holsworthy
+  - Cecil
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 15
+  evidence:
+    Mr. Cecil Holsworthy: I don't think you know Mr. Cecil Holsworthy.
+    Holsworthy: Holsworthy rose too.
+    Cecil: She asked about 'Cecil' with charming naivete.
+- canonical: Sissie Montague
+  aliases:
+  - Miss Montague
+  - Sissie
+  - Miss Sissie Montague
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 20
+  evidence:
+    Miss Montague: I called on her, in fact, night before last, at Scarborough.
+    Sissie: poor Sissie decided
+    Miss Sissie Montague: I have a photograph of Miss Sissie Montague
+- canonical: Reggie Nettlecraft
+  aliases:
+  - Reggie
+  - Reginald Nettlecraft
+  - Mr. Nettlecraft
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 22
+  evidence:
+    Reggie: Reggie, from Sissie
+    Reginald Nettlecraft: Reginald Nettlecraft, Esq., 427, Staples Inn, London.
+    Mr. Nettlecraft: Has Mr. Nettlecraft money?
+    Reggie Nettlecraft: Reggie Nettlecraft had grown up
+- canonical: Lady Tepping
+  aliases:
+  - my aunt
+  - Aunt Fanny
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 14
+  evidence:
+    my aunt: I went round to call on my aunt, Lady Tepping.
+    Aunt Fanny: Really, Aunt Fanny
+    Lady Tepping: Lady Tepping
+- canonical: Sir Malcolm Tepping
+  aliases:
+  - Sir Malcolm
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 14
+  evidence:
+    Sir Malcolm: Her husband, Sir Malcolm, a crusty old gentleman
+- canonical: Isabel Huntley
+  aliases:
+  - Isabel
+  - Number Fourteen
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 8
+  evidence:
+    Isabel: Isabel, you must take it.
+    Number Fourteen: Number Fourteen's ailment was a rare and peculiar one
+- canonical: Arthur
+  aliases: []
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 9
+  evidence:
+    Arthur: Arthur's ship is sighted off the Lizard.
+- canonical: Nielsen
+  aliases: []
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 10
+  evidence:
+    Nielsen: Nielsen has performed on six, three of them successfully.
+- canonical: Wells-Dinton
+  aliases: []
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 6
+  evidence:
+    Wells-Dinton: Wells-Dinton shall operate.
+- canonical: Travers
+  aliases:
+  - Mr. Travers
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 34
+  evidence:
+    Travers: Travers put in, with true medical unconcern
+    Mr. Travers: Get Mr. Travers's leave
+- canonical: Callaghan
+  aliases:
+  - Mr. Callaghan
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 64
+  evidence:
+    Callaghan: Callaghan whispered aside to me
+    Mr. Callaghan: Mr. Callaghan, YOUR blood is good normal
+- canonical: Dr. Yorke-Bannerman
+  aliases:
+  - Yorke-Bannerman
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 60
+  evidence:
+    Yorke-Bannerman: the notorious poisoner, Dr. Yorke-Bannerman.
+    Dr. Yorke-Bannerman: the notorious Dr. Yorke-Bannerman.
+- canonical: Mr. Horace Mayfield
+  aliases:
+  - Mayfield
+  - Mr. Mayfield
+  - Horace Mayfield
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 73
+  evidence:
+    Mayfield: Mayfield glanced inquiry at me.
+    Mr. Mayfield: Mr. Mayfield was at home
+    Horace Mayfield: Horace Mayfield resembles a great good-humoured toad
+- canonical: Admiral Scott Prideaux
+  aliases:
+  - the Admiral
+  - Scott Prideaux
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 74
+  evidence:
+    the Admiral: the Admiral was taken ill
+    Scott Prideaux: Scott Prideaux, getting as tired of life
+    Admiral Scott Prideaux: the death of Admiral Scott Prideaux
+- canonical: General Faskally
+  aliases: []
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 44
+  evidence:
+    General Faskally: his mother's father was General Faskally
+- canonical: Alfred Faskally
+  aliases:
+  - Alfred
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 44
+  evidence:
+    Alfred Faskally: Alfred Faskally really jumped over of his own accord
+    Alfred: his uncle Alfred
+- canonical: Marcus
+  aliases: []
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 45
+  evidence:
+    Marcus: Marcus, was SAID to have shot himself by accident
+- canonical: Linda
+  aliases: []
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 45
+  evidence:
+    Linda: that beautiful Linda
+- canonical: Charlotte Churtwood
+  aliases: []
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 77
+  evidence:
+    Charlotte Churtwood: Charlotte Churtwood sends her duty to Dr. Cumberledge
+- canonical: Jan Willem Klaas
+  aliases:
+  - Oom Jan Willem
+  - Mr. Jan Willem Klaas
+  - Klaas
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 87
+  evidence:
+    Oom Jan Willem: Oom Jan Willem was its courtesy uncle
+    Mr. Jan Willem Klaas: Mr. Jan Willem Klaas himself was a fine specimen
+    Klaas: They have murdered Klaas
+- canonical: Tant Mettie
+  aliases:
+  - Mrs. Klaas
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 87
+  evidence:
+    Tant Mettie: Tant Mettie lay dead
+    Mrs. Klaas: Mrs. Klaas, his wife, was mainly suggestive
+- canonical: Sannie
+  aliases: []
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 87
+  evidence:
+    Sannie: Lollipops for Sannie
+- canonical: Lady Meadowcroft
+  aliases:
+  - Emmie
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 113
+  evidence:
+    Lady Meadowcroft: Lady Meadowcroft
+    Emmie: My dear Emmie
+- canonical: Sir Ivor Meadowcroft
+  aliases:
+  - Sir Ivor
+  - Ivor
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 116
+  evidence:
+    Sir Ivor: Sir Ivor is interested in steel rails
+    Ivor: Ivor, do you hear?
+- canonical: Ram Das
+  aliases: []
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 128
+  evidence:
+    Ram Das: Ram Das told him so.
+- canonical: Colebrook
+  aliases: []
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 102
+  evidence:
+    Colebrook: Colebrook, in particular, was an odd-looking creature
+- canonical: Doolittle
+  aliases: []
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 102
+  evidence:
+    Doolittle: Doolittle, who was a shorter and stouter man
+- canonical: Mrs. Ogilvy
+  aliases: []
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 149
+  evidence:
+    Mrs. Ogilvy: that pretty Mrs. Ogilvy
+- canonical: Barclay
+  aliases: []
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 160
+  evidence:
+    Barclay: a fellow named Barclay
+- canonical: Dr. Blake Crawford
+  aliases: []
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 157
+  evidence:
+    Dr. Blake Crawford: Dr. Blake Crawford, who watched the case
+- canonical: Dr. Mayby
+  aliases: []
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 158
+  evidence:
+    Dr. Mayby: Dr. Mayby, a small local practitioner
+- canonical: Joseph Huntley
+  aliases: []
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 11
+  evidence:
+    Joseph Huntley: Joseph Huntley, who occupied Number Sixty-seven
+- canonical: Ellen Stubbs
+  aliases: []
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 11
+  evidence:
+    Ellen Stubbs: her cousin, again, Ellen Stubbs
+- canonical: Maisie Le Geyt
+  aliases:
+  - Maisie
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 32
+  evidence:
+    Maisie: Maisie, my sweet, NOT that pudding
+- canonical: Ettie Le Geyt
+  aliases:
+  - Ettie
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 32
+  evidence:
+    Ettie: Ettie, get your brown hat at once.
+- canonical: Hugo Le Geyt's sister
+  aliases:
+  - Le Geyt's sister
+  is_suspect: false
+  uncertain: true
+  first_mention_chunk: 33
+  evidence:
+    Le Geyt's sister: Le Geyt's sister, Mrs. Mallet
+- canonical: the Deputy Prosector of the Zoological Society
+  aliases: []
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 4
+  evidence:
+    the Deputy Prosector of the Zoological Society: His friend, the Deputy Prosector of the Zoological
+      Society
+- canonical: the matron
+  aliases: []
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 5
+  evidence:
+    the matron: the matron's petted and pampered Persian cats
+- canonical: the Major
+  aliases: []
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 104
+  evidence:
+    the Major: the Major in command decided to send out
+- canonical: the first officer
+  aliases: []
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 150
+  evidence:
+    the first officer: the first officer was in charge
+- canonical: the captain
+  aliases:
+  - the Captain
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 123
+  evidence:
+    the Captain: the Captain inquired of the passenger
+- canonical: the ship's doctor
+  aliases:
+  - Dr. Boyell
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 120
+  evidence:
+    the ship's doctor: the ship's doctor was there
+    Dr. Boyell: Dr. Boyell, your blood is good normal
+- canonical: the cook
+  aliases: []
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 130
+  evidence:
+    the cook: the cook, who can speak a little English
+- canonical: the chief Lama
+  aliases:
+  - the abbot
+  - priest-sahib
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 130
+  evidence:
+    the chief Lama: the chief Lama or abbot motioned to us
+    the abbot: the abbot gave the cylinder a surreptitious push
+    priest-sahib: Priest-sahib say, very important
+- canonical: the retired gentleman
+  aliases: []
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 139
+  evidence:
+    the retired gentleman: the retired gentleman led the way
+- canonical: the sandy-haired clerk
+  aliases:
+  - the clerk
+  is_suspect: false
+  uncertain: false
+  first_mention_chunk: 79
+  evidence:
+    the sandy-haired clerk: the sandy-haired clerk hummed and hesitated
+    the clerk: the clerk produced it.

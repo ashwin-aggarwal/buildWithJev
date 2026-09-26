@@ -38,7 +38,9 @@
 <main id="view-run" class="run no-text" role="tabpanel" aria-labelledby="tab-run" hidden>
   <section class="panel bars-panel" aria-label="Probabilities at the current chunk">
     <div class="panel-head">
-      <h2>Suspects at chunk <span id="bars-t">–</span></h2>
+      <h2><span id="bars-scope">Top 7</span> at chunk <span id="bars-t">–</span></h2>
+      <button class="pill small" id="barstoggle" aria-pressed="false"
+              title="The chart still plots everyone; this only changes the bars">Show all</button>
     </div>
     <div class="bars" id="bars"></div>
   </section>

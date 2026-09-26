@@ -68,3 +68,11 @@ def test_inline_markup_does_not_split_words():
         "To Sherlock Holmes she is always the woman. A new line here.",
         "\u201cRemorse,\u201d she said.",
     ]
+
+
+def test_gutenberg_australia_page():
+    html = ('<html><body><p>GO TO Project Gutenberg Australia HOME PAGE</p><h2>CHAPTER I.</h2>'
+            '<p>Hilda Wade walked into the ward.</p>'
+            '<p>This site is full of FREE ebooks - Project Gutenberg Australia</p></body></html>')
+    assert parse_html(html)["paragraphs"] == ["Hilda Wade walked into the ward."]
+    assert make_book_id("https://gutenberg.net.au/ebooks13/1302201h.html", "Hilda Wade", ["x"]) == "pgau1302201"

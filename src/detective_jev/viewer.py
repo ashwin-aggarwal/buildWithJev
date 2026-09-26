@@ -122,7 +122,12 @@ def load_run(name: str) -> dict[str, Any]:
              "is_none": c == NONE_OPTION}
             for c in candidates
         ],
-        "steps": [{"t": r["t"], "p": [r["probabilities"].get(c, 0.0) for c in candidates]} for r in rows],
+        "steps": [{"t": r["t"], "p": [r["probabilities"].get(c, 0.0) for c in candidates],
+                   # Jev's own judgement of whether the culprit has been revealed yet (None on
+                   # runs made before the question existed). Not the answer key.
+                   "revealed": ((r.get("inference_answers") or {}).get("culprit_revealed") or {}).get("prob")}
+                  for r in rows],
+        "raw_window": rows[0].get("raw_window", 1),
         "chunks": [
             {"t": m["index"], "chapter": m.get("chapter"), "words": m["word_count"],
              "fraction": m["cumulative_fraction"], "text": storage.chunk_text(book, m["index"])}

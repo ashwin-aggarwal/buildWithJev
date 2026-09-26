@@ -263,6 +263,20 @@ def active_rollups(ledger: dict[str, Any], t: int) -> list[dict[str, Any]]:
     return [r for r in ledger["rollups"] if r["triggered_at_t"] <= t]
 
 
+def state_text(book: dict[str, Any], ledger: dict[str, Any], roster: dict[str, Any], t: int, *,
+               rollups: list[dict[str, Any]], suspects: list[str] | None = None,
+               posthoc: dict[str, Any] | None = None, window: int | None = None) -> str:
+    """The exact inference state at step t (shared by inference and the
+    overflow check): compressed notes for 1..t-W, then chunks t-W+1..t in full,
+    where W = config.RAW_WINDOW. Pure in its arguments."""
+    w = window or config.RAW_WINDOW
+    first_raw = max(1, t - w + 1)
+    notes = render_ledger(ledger["entries"][: first_raw - 1], roster, rollups=rollups,
+                          suspects=suspects, posthoc=posthoc)
+    recent = [(k, storage.chunk_text(book, k)) for k in range(first_raw, t)]
+    return compose_state(notes, t, storage.chunk_text(book, t), recent=recent, notes_upto=first_raw - 1)
+
+
 def ensure_rollups(ledger: dict[str, Any], book: dict[str, Any], roster: dict[str, Any], t: int) -> bool:
     """Make sure rollups are computed for every step up to t. Returns True if
     any new rollup was added (the caller should then save the ledger).
@@ -272,18 +286,21 @@ def ensure_rollups(ledger: dict[str, Any], book: dict[str, Any], roster: dict[st
     """
     from .tokens import count_tokens
 
-    if ledger["token_budget"] != config.LEDGER_TOKEN_BUDGET and ledger["rollups_checked_through"]:
-        raise LedgerMismatchError(
-            f"Ledger rollups were computed with token budget {ledger['token_budget']}, "
-            f"config now says {config.LEDGER_TOKEN_BUDGET}. Rebuild with --force."
-        )
-    ledger["token_budget"] = config.LEDGER_TOKEN_BUDGET
+    # Rollups depend on the budget and the full-text window. They are derived
+    # (no API calls) and deterministic, so if either setting changed they are
+    # simply recomputed; the ledger entries themselves are never touched.
+    params = {"token_budget": config.LEDGER_TOKEN_BUDGET, "raw_window": config.RAW_WINDOW}
     changed = False
+    if ledger.get("token_budget") != params["token_budget"] or ledger.get("raw_window", 1) != params["raw_window"]:
+        if ledger["rollups"] or ledger["rollups_checked_through"]:
+            logger.info("%s: rollup settings changed %s; recomputing rollups.", ledger["book_id"], params)
+            changed = True
+        ledger.update(params, rollups=[], rollups_checked_through=0)
+    first_raw = lambda s: max(1, s - config.RAW_WINDOW + 1)  # noqa: E731
     for s in range(ledger["rollups_checked_through"] + 1, t + 1):
-        visible = ledger["entries"][: s - 1]
+        visible = ledger["entries"][: first_raw(s) - 1]
         while True:
-            notes = render_ledger(visible, roster, rollups=ledger["rollups"])
-            tokens = count_tokens(compose_state(notes, s, storage.chunk_text(book, s)))
+            tokens = count_tokens(state_text(book, ledger, roster, s, rollups=ledger["rollups"]))
             if tokens <= config.LEDGER_TOKEN_BUDGET:
                 break
             covered = {i for r in ledger["rollups"] for i in range(r["chunks"][0], r["chunks"][1] + 1)}

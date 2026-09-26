@@ -88,3 +88,31 @@ def test_web_upload_and_job(txt_book):
     assert state["state"] == "done", state
     assert all(s["state"] == "done" for s in state["stages"].values())
     assert state["result"]["run_file"] in [r["file"] for r in c.get("/api/runs").json["runs"]]
+
+
+class _Resp:
+    status_code = 200
+
+    def __init__(self, body):
+        self._body = body
+        self.text = str(body)
+
+    def json(self):
+        return self._body
+
+
+def test_openrouter_extraction_limits_reasoning_and_explains_empty_answers(book, monkeypatch):
+    import requests
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+    sent = []
+    empty = {"choices": [{"finish_reason": "length", "message": {"content": ""}}],
+             "usage": {"completion_tokens": 32000, "completion_tokens_details": {"reasoning_tokens": 32000}}}
+    monkeypatch.setattr(requests, "post", lambda url, **kw: sent.append(kw["json"]) or _Resp(empty))
+    with pytest.raises(roster_mod.RosterError, match="hidden reasoning"):
+        roster_mod._call_extraction_openrouter(book)
+    assert sent[0]["reasoning"]["effort"] == config.OPENROUTER_EXTRACTION_REASONING == "none"
+
+    good = {"choices": [{"finish_reason": "stop", "message": {"content": '{"characters": []}'}}]}
+    monkeypatch.setattr(requests, "post", lambda url, **kw: _Resp(good))
+    assert roster_mod._call_extraction_openrouter(book) == {"characters": []}

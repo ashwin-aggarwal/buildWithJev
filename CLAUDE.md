@@ -90,6 +90,8 @@ The whole pipeline has now run for real (not just mock), and it works.
   - the chunk text, which scrolls independently. That fixes the old
     page-jumping bug caused by `scrollIntoView`.
 
+  The bars show the top 7 at chunk t by default ("Show all N" / "Show top 7"
+  toggle, remembered per browser); the chart always plots everyone.
   Hovering a line or legend entry highlights that character in all three
   panels, including their names in the text.
 - **Colours** follow the dataviz reference palette (validated light and dark).
@@ -156,6 +158,33 @@ The whole pipeline has now run for real (not just mock), and it works.
   - Upload limit 80 MB.
   - Real runs need `OPENROUTER_API_KEY` on the server; the key never reaches
     the browser.
+
+### Full-text window + reveal question (2026-09-26)
+
+- **The inference state now keeps the last `RAW_WINDOW` chunks in full text**
+  (config / env, default **3**). Step t sees CASE NOTES for 1..t−3, then
+  RECENT PASSAGES t−2 and t−1 in full, then the CURRENT PASSAGE t.
+  - Why: at W=1 a reveal was compressed away one step after it happened
+    (Hilda Wade ended at 52%).
+  - `RAW_WINDOW=1` reproduces the original state byte for byte, and keeps old
+    run ids and cache hits.
+  - Cost: about +1.2K tokens per call. Ackroyd peaks at 15K and Hilda Wade at
+    20.8K, both under the 26K rollup budget and the 32K limit.
+- **One shared state builder:** `ledger.state_text()`, used by both
+  `inference.build_state` and the rollup check. Rollups are derived, so a
+  budget or window change now recomputes them instead of raising.
+- **`run_id` includes the window when W≠1.** Rows gain `raw_window` (additive).
+- **New inference question `culprit_revealed`** (Noul): "has the story
+  explicitly revealed who did it?"
+  - The viewer marks the first step with p ≥ 0.5 as a dashed **Revealed**
+    line. It appears only once the playhead reaches it, so it isn't a
+    spoiler.
+  - The tooltip shows "Culprit revealed yet? Jev says N%".
+  - This is Jev's own judgement, not the answer key.
+  - `contradicts_prior` wording now covers RECENT PASSAGES too.
+- **Existing results** (`pg69087__077c…`, `pgau1302201__…`) were made at W=1,
+  without the reveal question. Re-running inference (the ledgers are reused,
+  no rebuild) costs ≈ $0.05 for Ackroyd and $0.08 for Hilda Wade.
 
 ## Next steps (roadmap for future sessions)
 

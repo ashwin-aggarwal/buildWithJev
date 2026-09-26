@@ -56,3 +56,10 @@ def test_cost_inputs(roster_file, book):
     assert inf["llm_output_full_per_call"] > inf["llm_output_top_per_call"] > 0
     assert comp["input_tokens"] > 0 and cost["jev_price_per_m"] == config.PRICE_PER_1M_INPUT_TOKENS
     assert {m["id"] for m in cost["prices"]["models"]} >= {"anthropic/claude-sonnet-5", "deepseek/deepseek-v4-flash"}
+
+
+def test_run_payload_carries_reveal_and_window(roster_file, book):
+    c = _setup(roster_file, book)
+    run = c.get(f"/api/run/{c.get('/api/runs').json['runs'][0]['file']}").json
+    assert run["raw_window"] == config.RAW_WINDOW
+    assert all(0.0 <= s["revealed"] <= 1.0 for s in run["steps"])   # Jev's judgement, per step

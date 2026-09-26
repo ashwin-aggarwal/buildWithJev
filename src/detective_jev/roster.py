@@ -295,6 +295,9 @@ def _call_extraction_openrouter(book: dict[str, Any]) -> dict[str, Any]:
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
             "max_tokens": config.OPENROUTER_EXTRACTION_MAX_OUTPUT_TOKENS,
             "temperature": 0,
+            # Hidden reasoning shares max_tokens with the answer; keep it from
+            # eating the whole budget (see config.OPENROUTER_EXTRACTION_REASONING).
+            "reasoning": {"effort": config.OPENROUTER_EXTRACTION_REASONING, "exclude": True},
         },
     )
     if resp.status_code != 200:
@@ -303,21 +306,38 @@ def _call_extraction_openrouter(book: dict[str, Any]) -> dict[str, Any]:
     choices = data.get("choices") or []
     if not choices:
         raise RosterError(f"OpenRouter returned no choices: {str(data)[:300]}")
-    if choices[0].get("finish_reason") == "length":
-        logger.warning("OpenRouter extraction hit the output cap; the roster may be truncated.")
     content = (choices[0].get("message") or {}).get("content") or ""
+    if choices[0].get("finish_reason") == "length":
+        usage = data.get("usage") or {}
+        reasoning = (usage.get("completion_tokens_details") or {}).get("reasoning_tokens")
+        if not content.strip():
+            raise RosterError(
+                f"{model} used its whole {config.OPENROUTER_EXTRACTION_MAX_OUTPUT_TOKENS:,}-token output "
+                f"budget{f' ({reasoning:,} tokens of hidden reasoning)' if reasoning else ''} before writing "
+                "the character list. Try again, or set OPENROUTER_EXTRACTION_REASONING=none in .env, or "
+                "pick a different OPENROUTER_EXTRACTION_MODEL."
+            )
+        logger.warning("OpenRouter extraction hit the output cap; the roster may be truncated.")
     if not content.strip():
         raise RosterError(f"OpenRouter returned an empty message: {str(data)[:300]}")
     return _parse_roster_json(content)
 
 
-def _call_extraction_api(book: dict[str, Any]) -> dict[str, Any]:
+def _extraction_provider() -> str:
+    """The backend actually used: EXTRACTION_PROVIDER, except that "anthropic"
+    falls back to OpenRouter when only an OpenRouter key is configured."""
     import os
 
     provider = config.EXTRACTION_PROVIDER
     if provider == "anthropic" and not config.anthropic_api_key() and os.getenv(config.OPENROUTER_KEY_ENV):
+        return "openrouter"
+    return provider
+
+
+def _call_extraction_api(book: dict[str, Any]) -> dict[str, Any]:
+    provider = _extraction_provider()
+    if provider != config.EXTRACTION_PROVIDER:
         logger.info("No %s set; extracting the roster through OpenRouter instead.", config.ANTHROPIC_KEY_ENV)
-        provider = "openrouter"
     if provider == "openrouter":
         return _call_extraction_openrouter(book)
     if provider == "anthropic":
@@ -354,7 +374,7 @@ def roster_from_extraction(book: dict[str, Any], data: dict[str, Any]) -> dict[s
             "first_mention_chunk": None,
             "evidence": dict(raw.get("evidence") or {}),
         })
-    if config.EXTRACTION_PROVIDER == "openrouter":
+    if _extraction_provider() == "openrouter":
         source = f"openrouter:{config.OPENROUTER_EXTRACTION_MODEL}"
     else:
         source = f"anthropic:{config.EXTRACTION_MODEL}"

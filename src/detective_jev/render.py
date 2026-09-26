@@ -124,7 +124,18 @@ def render_ledger(
     return "\n".join(lines)
 
 
-def compose_state(notes: str, t: int, chunk_text: str) -> str:
-    """The inference state at step t: case notes for 1..t-1, then chunk t raw."""
-    header = "CASE NOTES (none yet)" if t <= 1 else f"CASE NOTES (compressed record of passages 1-{t - 1})"
-    return f"{header}:\n{notes}\n\nCURRENT PASSAGE (#{t}):\n{chunk_text}"
+def compose_state(notes: str, t: int, chunk_text: str, *,
+                  recent: list[tuple[int, str]] = (), notes_upto: int | None = None) -> str:
+    """The inference state at step t.
+
+    CASE NOTES (compressed passages 1..notes_upto), then RECENT PASSAGES in
+    full text (if any), then the CURRENT PASSAGE (chunk t) in full. With no
+    recent passages this is exactly the original layout (notes for 1..t-1).
+    """
+    n = t - 1 if notes_upto is None else notes_upto
+    header = "CASE NOTES (none yet)" if n < 1 else f"CASE NOTES (compressed record of passages 1-{n})"
+    parts = [f"{header}:\n{notes}"]
+    if recent:
+        parts.append("RECENT PASSAGES (full text):\n" + "\n\n".join(f"[#{k}]\n{txt}" for k, txt in recent))
+    parts.append(f"CURRENT PASSAGE (#{t}):\n{chunk_text}")
+    return "\n\n".join(parts)

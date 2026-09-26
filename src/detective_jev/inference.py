@@ -21,9 +21,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 from . import config, jev_client, storage
-from .ledger import active_rollups, ensure_rollups, load_posthoc, record_posthoc, save_ledger
+from .ledger import active_rollups, ensure_rollups, load_posthoc, record_posthoc, save_ledger, state_text
 from .questions import questions_hash, resolve
-from .render import compose_state, render_ledger
 from .roster import candidates
 
 
@@ -37,21 +36,22 @@ def compute_run_id(ledger: dict[str, Any], inference_questions: list[dict[str, A
     ledger_hash = hashlib.sha256(
         json.dumps(ledger["entries"], sort_keys=True, ensure_ascii=False).encode("utf-8")
     ).hexdigest()
-    payload = json.dumps([
-        ledger["book_id"], config.MODEL_ID, config.PROVIDER, ledger_hash,
-        questions_hash(inference_questions), candidate_set, condition, mock, posthoc,
-    ])
+    parts = [ledger["book_id"], config.MODEL_ID, config.PROVIDER, ledger_hash,
+             questions_hash(inference_questions), candidate_set, condition, mock, posthoc]
+    if config.RAW_WINDOW != 1:        # window 1 keeps the ids of runs made before windows existed
+        parts.append(f"raw_window={config.RAW_WINDOW}")
+    payload = json.dumps(parts)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
 
 
 def build_state(book: dict[str, Any], ledger: dict[str, Any], roster: dict[str, Any], t: int, *,
                 suspects: list[str] | None = None, posthoc: dict[str, Any] | None = None) -> str:
-    """Pure: the inference state for step t (call ensure_rollups first)."""
+    """Pure: the inference state for step t (call ensure_rollups first).
+    Compressed notes for 1..t-W, then chunks t-W+1..t in full (W = RAW_WINDOW)."""
     if not 1 <= t <= book["n_chunks"]:
         raise InferenceError(f"t={t} out of range 1..{book['n_chunks']}")
-    notes = render_ledger(ledger["entries"][: t - 1], roster, rollups=active_rollups(ledger, t),
-                          suspects=suspects, posthoc=posthoc)
-    return compose_state(notes, t, storage.chunk_text(book, t))
+    return state_text(book, ledger, roster, t, rollups=active_rollups(ledger, t),
+                      suspects=suspects, posthoc=posthoc)
 
 
 def run_step(book: dict[str, Any], ledger: dict[str, Any], roster: dict[str, Any],
@@ -104,4 +104,5 @@ def result_row(t: int, result: dict[str, Any], *, book_id: str, run_id: str, con
             for qid, a in result["answers"].items()
         },
         "option_order": result["option_order"],
+        "raw_window": config.RAW_WINDOW,
     }

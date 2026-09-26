@@ -54,8 +54,12 @@ def estimate(book: dict[str, Any], n_characters: int | None = None) -> dict[str,
     ledger_tokens = sum(2 * c + 600 + 115 * chars for c in chunk_tokens)
     per_entry = 95
     question_tokens = 150 + 40 * (chars + 1)
-    inference_tokens = sum(min(per_entry * (t - 1), config.LEDGER_TOKEN_BUDGET) + chunk_tokens[t - 1]
-                           + question_tokens for t in range(1, n + 1))
+    w = config.RAW_WINDOW
+    inference_tokens = sum(
+        min(per_entry * max(0, t - w), config.LEDGER_TOKEN_BUDGET)
+        + sum(chunk_tokens[max(0, t - w):t])            # the full-text window, incl. chunk t
+        + question_tokens
+        for t in range(1, n + 1))
     jev = (ledger_tokens + inference_tokens) / 1e6 * config.PRICE_PER_1M_INPUT_TOKENS
 
     book_tokens = sum(chunk_tokens) + 800

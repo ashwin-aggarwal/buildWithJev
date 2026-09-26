@@ -1,6 +1,7 @@
 # INFERENCE questions: asked ONCE per timestep t, all in ONE batched Jev call,
-# with state = CASE NOTES (rendered ledger entries 1..t-1) + CURRENT PASSAGE
-# (chunk t, raw). Answers go to the results rows, never into ledger entries.
+# with state = CASE NOTES (compressed ledger for passages 1..t-W) + RECENT
+# PASSAGES (t-W+1..t-1, full text) + CURRENT PASSAGE (chunk t, full text),
+# where W = config.RAW_WINDOW (default 3; 1 = no recent passages). Answers go to the results rows, never into ledger entries.
 # Every question here is scope: history_aware; the loader rejects anything else.
 #
 # `culprit` is required: it is the project's output and feeds the existing
@@ -18,10 +19,20 @@ questions:
   - id: contradicts_prior
     scope: history_aware
     type: noul
-    text: "Does the CURRENT PASSAGE contradict something recorded in the CASE NOTES from earlier passages?"
+    text: "Does the CURRENT PASSAGE contradict something from earlier in the story (in the CASE NOTES or RECENT PASSAGES)?"
 
   - id: alibi_effect
     scope: history_aware
     type: choice
     text: "What does the CURRENT PASSAGE do to any character's alibi, compared with what the CASE NOTES record?"
     options: [established, weakened, none]
+
+  # Marks the reveal point on the curve, so we can measure how confident Jev
+  # is once the story has shown its hand (e.g. its peak and stability after).
+  - id: culprit_revealed
+    scope: history_aware
+    type: noul
+    text: >-
+      Has the story, up to and including the CURRENT PASSAGE, explicitly revealed who committed
+      the crime? For example: a confession, the detective naming the culprit with the proof,
+      or the culprit being caught in the act. Suspicion, accusations, or guesses do not count.

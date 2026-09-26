@@ -40,17 +40,36 @@ def test_suspects_filter_only_narrows_suspicion(built):
     assert "suspicion: Simms 4" in narrow
 
 
-def test_state_excludes_chunk_t_from_notes(built):
+def test_window_1_is_the_original_state(built, monkeypatch):
     from detective_jev.inference import build_state
 
+    monkeypatch.setattr(config, "RAW_WINDOW", 1)
     led, roster, book = built
     t = 4
     state = build_state(book, led, roster, t)
     notes, current = state.split("\n\nCURRENT PASSAGE (#4):\n")
     assert current == storage.chunk_text(book, t)
-    assert "#3 " in notes and "#4 " not in notes
+    assert "#3 " in notes and "#4 " not in notes and "RECENT PASSAGES" not in state
     assert build_state(book, led, roster, 1).startswith("CASE NOTES (none yet)")
     assert state == compose_state(render_ledger(led["entries"][:3], roster), t, current)
+
+
+def test_recent_chunks_stay_full_text(built, monkeypatch):
+    from detective_jev.inference import build_state
+
+    monkeypatch.setattr(config, "RAW_WINDOW", 3)
+    led, roster, book = built
+    t = 5
+    state = build_state(book, led, roster, t)
+    head, current = state.split("\n\nCURRENT PASSAGE (#5):\n")
+    notes, recent = head.split("\n\nRECENT PASSAGES (full text):\n")
+    assert notes.startswith("CASE NOTES (compressed record of passages 1-2)")
+    assert "#2 " in notes and "#3 " not in notes                      # 3 and 4 are full text instead
+    assert recent == f"[#3]\n{storage.chunk_text(book, 3)}\n\n[#4]\n{storage.chunk_text(book, 4)}"
+    assert current == storage.chunk_text(book, t)
+    # early steps: nothing compressed yet
+    s2 = build_state(book, led, roster, 2)
+    assert s2.startswith("CASE NOTES (none yet)") and "[#1]" in s2
 
 
 def test_rollup_triggers_logs_and_hides_future(built, monkeypatch, caplog):
