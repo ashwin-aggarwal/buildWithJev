@@ -14,6 +14,70 @@ Two runners share one client:
 - **Live demo site** — `scripts/serve.py` → Flask + SSE → `viz/index.html`.
 - **Batch run** — `scripts/run_curve.py` → `data/results/<name>.jsonl`.
 
+## Status — verified END-TO-END against the LIVE Jev API (2026-09-26)
+
+The whole pipeline has now run for real (not just mock), and it works.
+
+- **Jev API is live and the schema is correct.** `scripts/smoke_test.py` plus a
+  full real ledger + inference run succeeded via OpenRouter
+  (`JEV_PROVIDER=openrouter`, `typesafe/jev-1.13`, responses echo build
+  `-20260917`). The client's request/response handling — including the
+  **31-question batched compression call** — is validated against reality, not
+  just docs.
+- **First solved book: `pg69087` — *The Murder of Roger Ackroyd*** (Christie;
+  70k words, 133 chunks). Real ledger built (133 compression calls); inference
+  run to t=133. Jev converges on **James Sheppard at 0.99** — the narrator, the
+  book's famous twist — correctly; early steps sit on `none_of_these`. Whole-book
+  spend ≈ **$0.08**. Committed artifacts: `data/books/pg69087.json.gz`,
+  `data/rosters/pg69087.yaml`, `data/ledgers/pg69087.json.gz` (real ledger),
+  `data/manifest.parquet`. Every real call is cached in `.cache/jev.sqlite`
+  (gitignored), so replays are free.
+
+### What changed this session (all shape-compatible)
+
+- **Webapp wired to book mode** (the real pipeline). `webapp.py` adds
+  `/api/books` and `/api/solve_book` — the latter streams `inference.run_step`
+  per chunk using the SAME SSE event shape as paragraph mode, so the existing
+  charts render unchanged. `viz/index.html` adds a Mode picker (Book vs
+  Paragraph), a book dropdown, a candidate-set selector, and a **Log-scale
+  toggle** on the Whodunit Curve (spreads the crowded low-probability suspects
+  apart; clamps at 0.01%). Paragraph mode is untouched.
+- **Roster extraction can run over OpenRouter** (no Anthropic key required).
+  `config.EXTRACTION_PROVIDER` = `anthropic` (default) | `openrouter`; the
+  OpenRouter path (`roster._call_extraction_openrouter`) posts to the chat-
+  completions API with `OPENROUTER_EXTRACTION_MODEL` (default
+  `deepseek/deepseek-v4-flash`) and reuses `OPENROUTER_API_KEY`. Set via `.env`.
+- **KNOWN FOOTGUN — Mock mode in book mode.** A book with a real ledger STILL
+  defaults to the Mock checkbox, which returns uniform-noise distributions (flat
+  gray curve, random "verdict") while looking legit. **Uncheck "Mock mode" for
+  the real run.** (UX fix is item 2 below.)
+
+## Next steps (roadmap for future sessions)
+
+1. **Test on more novels — rule out training-data contamination.** Roger Ackroyd
+   is famous, so Jev may already "know" the culprit. Run several *less-canonical*
+   and ideally obscure public-domain mysteries and check whether the curve tracks
+   the in-text evidence or jumps to the culprit *before* the clues support it — a
+   curve that leads the evidence is a contamination smell. `detective_jev.scoring`
+   + `data/answers/<id>.yaml` (the isolated answer key) exist for exactly this:
+   wire a Brier / accuracy-over-time metric and overlay ground truth on the curve.
+   Per book: `cli ingest <html-url>` → `cli roster` (OpenRouter works) →
+   hand-check `is_suspect` → `cli ledger --real` → run.
+2. **Improve the frontend UI.** Auto-uncheck Mock (or show a loud "MOCK — random,
+   not real" banner) when a real ledger exists; surface the other
+   `inference_answers` (`contradicts_prior`, `alibi_effect`) that are already
+   computed but not displayed; default to `suspects_only` for legibility; fix the
+   25-series curve (palette only has 8 colors, rest are gray). Note the webapp
+   persists nothing — only `scripts/run_curve.py --book` writes the results
+   JSONL/Parquet (free after a browser run, since calls are cached).
+3. **Deploy publicly — NEVER ship our key.** The key stays server-side today, but
+   a public site must not carry a personal OpenRouter key. Options: a per-visitor
+   bring-your-own-key field; a rate-limited/credit-capped shared key behind a
+   proxy; or (safest) a **pre-computed replay** — ship the ledger + cached
+   results and serve the curve from cache with live calls disabled. Given cost
+   grows ~quadratically and keys are secret, pre-computed replay is the best
+   default for a public demo.
+
 ## Ownership (read before editing)
 
 The **environment, Jev client, billing/keys, repo structure, and the demo

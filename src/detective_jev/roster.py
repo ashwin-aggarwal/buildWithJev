@@ -193,21 +193,37 @@ def _book_text(book: dict[str, Any]) -> str:
     return "\n\n".join(storage.chunk_text(book, t) for t in range(1, book["n_chunks"] + 1))
 
 
-def _call_extraction_api(book: dict[str, Any]) -> dict[str, Any]:
+def _extraction_inputs(book: dict[str, Any]) -> tuple[str, str]:
+    """The (system, user) message pair sent to whichever extraction backend."""
+    system = config.EXTRACT_PROMPT_PATH.read_text(encoding="utf-8")
+    user = f"Title: {book.get('title') or 'unknown'}\n\n<novel>\n{_book_text(book)}\n</novel>"
+    return system, user
+
+
+def _parse_roster_json(text: str) -> dict[str, Any]:
+    """Pull the JSON object out of a model response (tolerates surrounding prose)."""
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end < 0:
+        raise RosterError("Extraction response contained no JSON object.")
+    try:
+        return json.loads(text[start:end + 1])
+    except json.JSONDecodeError as exc:
+        raise RosterError(f"Extraction response was not valid JSON: {exc}") from exc
+
+
+def _call_extraction_anthropic(book: dict[str, Any]) -> dict[str, Any]:
     import anthropic
 
     key = config.anthropic_api_key()
     if not key:
         raise RosterError(
-            f"{config.ANTHROPIC_KEY_ENV} is not set. Add it to .env, or hand-write "
-            f"{storage.roster_path(book['book_id'])}."
+            f"{config.ANTHROPIC_KEY_ENV} is not set. Add it to .env, set "
+            f"EXTRACTION_PROVIDER=openrouter to use your OpenRouter key instead, or "
+            f"hand-write {storage.roster_path(book['book_id'])}."
         )
     client = anthropic.Anthropic(api_key=key)
-    system = config.EXTRACT_PROMPT_PATH.read_text(encoding="utf-8")
-    messages = [{
-        "role": "user",
-        "content": f"Title: {book.get('title') or 'unknown'}\n\n<novel>\n{_book_text(book)}\n</novel>",
-    }]
+    system, user = _extraction_inputs(book)
+    messages = [{"role": "user", "content": user}]
     model = config.EXTRACTION_MODEL
 
     n_in = client.messages.count_tokens(model=model, system=system, messages=messages).input_tokens
@@ -231,13 +247,79 @@ def _call_extraction_api(book: dict[str, Any]) -> dict[str, Any]:
     if response.stop_reason in ("refusal", "max_tokens"):
         raise RosterError(f"Extraction stopped early (stop_reason={response.stop_reason}).")
     text = "".join(b.text for b in response.content if b.type == "text")
-    start, end = text.find("{"), text.rfind("}")
-    if start < 0 or end < 0:
-        raise RosterError("Extraction response contained no JSON object.")
-    try:
-        return json.loads(text[start:end + 1])
-    except json.JSONDecodeError as exc:
-        raise RosterError(f"Extraction response was not valid JSON: {exc}") from exc
+    return _parse_roster_json(text)
+
+
+def _call_extraction_openrouter(book: dict[str, Any]) -> dict[str, Any]:
+    """One extraction call over OpenRouter's chat-completions API (reuses the
+    OpenRouter key). Used when EXTRACTION_PROVIDER=openrouter."""
+    import os
+
+    import requests
+
+    from .tokens import count_tokens
+
+    key = os.getenv(config.OPENROUTER_KEY_ENV)
+    if not key:
+        raise RosterError(
+            f"{config.OPENROUTER_KEY_ENV} is not set (needed for EXTRACTION_PROVIDER=openrouter). "
+            f"Add it to .env, or hand-write {storage.roster_path(book['book_id'])}."
+        )
+    system, user = _extraction_inputs(book)
+    model = config.OPENROUTER_EXTRACTION_MODEL
+
+    # Approximate the input size (tiktoken proxy; the real tokenizer varies per
+    # model). Refuse rather than send a request the model's context can't hold.
+    n_in = count_tokens(system) + count_tokens(user)
+    limit = config.OPENROUTER_EXTRACTION_CONTEXT_TOKENS - config.OPENROUTER_EXTRACTION_MAX_OUTPUT_TOKENS
+    if n_in > limit:
+        raise RosterError(
+            f"{book['book_id']} is ~{n_in:,} tokens; the configured OpenRouter model {model} "
+            f"fits at most ~{limit:,}. Pick a larger-context OPENROUTER_EXTRACTION_MODEL or "
+            f"hand-write {storage.roster_path(book['book_id'])}."
+        )
+
+    logger.info("Extracting roster for %s via OpenRouter %s (~%s input tokens)",
+                book["book_id"], model, f"{n_in:,}")
+    resp = requests.post(
+        config.OPENROUTER_CHAT_URL,
+        timeout=300.0,
+        headers={
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/  (whodunit-curve)",
+            "X-Title": "Whodunit Curve",
+        },
+        json={
+            "model": model,
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            "max_tokens": config.OPENROUTER_EXTRACTION_MAX_OUTPUT_TOKENS,
+            "temperature": 0,
+        },
+    )
+    if resp.status_code != 200:
+        raise RosterError(f"OpenRouter extraction failed (HTTP {resp.status_code}): {resp.text[:300]}")
+    data = resp.json()
+    choices = data.get("choices") or []
+    if not choices:
+        raise RosterError(f"OpenRouter returned no choices: {str(data)[:300]}")
+    if choices[0].get("finish_reason") == "length":
+        logger.warning("OpenRouter extraction hit the output cap; the roster may be truncated.")
+    content = (choices[0].get("message") or {}).get("content") or ""
+    if not content.strip():
+        raise RosterError(f"OpenRouter returned an empty message: {str(data)[:300]}")
+    return _parse_roster_json(content)
+
+
+def _call_extraction_api(book: dict[str, Any]) -> dict[str, Any]:
+    provider = config.EXTRACTION_PROVIDER
+    if provider == "openrouter":
+        return _call_extraction_openrouter(book)
+    if provider == "anthropic":
+        return _call_extraction_anthropic(book)
+    raise RosterError(
+        f"Unknown EXTRACTION_PROVIDER {provider!r}; expected 'anthropic' or 'openrouter'."
+    )
 
 
 def extract_characters(book: dict[str, Any], *, use_cache: bool = True) -> dict[str, Any]:
@@ -267,10 +349,14 @@ def roster_from_extraction(book: dict[str, Any], data: dict[str, Any]) -> dict[s
             "first_mention_chunk": None,
             "evidence": dict(raw.get("evidence") or {}),
         })
+    if config.EXTRACTION_PROVIDER == "openrouter":
+        source = f"openrouter:{config.OPENROUTER_EXTRACTION_MODEL}"
+    else:
+        source = f"anthropic:{config.EXTRACTION_MODEL}"
     return {
         "book_id": book["book_id"],
         "pipeline_version": config.PIPELINE_VERSION,
-        "source": f"anthropic:{config.EXTRACTION_MODEL}",
+        "source": source,
         "characters": chars,
     }
 
