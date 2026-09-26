@@ -20,13 +20,15 @@ const state = {
   runs: [],
   run: null,          // payload from /api/run/<file>
   cost: null,         // payload from /api/cost/<file>
-  t: 1,
+  t: 1,              // selected chunk (integer); drives bars + text
+  tf: 1,             // playhead position (float); drives the chart so it glides
   playing: false,
-  timer: null,
+  raf: null,         // animation frame for playback / glides
   speed: 1,
   hover: null,        // candidate index or null
   hidden: new Set(),  // candidate indices whose line is hidden
   fullRun: false,
+  showText: false,    // right-hand text panel (remembered per browser)
   log: false,
   tab: "run",
 };
@@ -89,6 +91,9 @@ async function init() {
   $("runpick").hidden = state.runs.length < 2;
   sel.addEventListener("change", () => loadRun(sel.value));
   wireControls();
+  let savedText = false;
+  try { savedText = localStorage.getItem("dj.showText") === "1"; } catch (_) {}
+  setShowText(savedText);
   showTab(location.hash === "#cost" ? "cost" : "run");
   await loadRun(state.runs[0].file);
 }
@@ -140,16 +145,46 @@ function prepareRun(run) {
 // The one state change
 // ---------------------------------------------------------------------------
 
+const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* Select chunk t. Bars and text jump to t (bars animate via CSS); the chart's
+ * playhead glides there unless opts.instant, or opts.tf gives an exact
+ * position (dragging, playback). */
 function setT(t, opts = {}) {
   const run = state.run;
   if (!run) return;
-  state.t = Math.max(1, Math.min(run.maxT, Math.round(t)));
+  const next = Math.max(1, Math.min(run.maxT, Math.round(t)));
+  const changed = next !== state.t;
+  state.t = next;
   $("scrub").value = state.t;
-  $("readout").textContent = `${state.t} / ${run.maxT}`;
+  const chunk = run.chunkByT.get(state.t);
+  $("readout-num").textContent = state.t;
+  $("readout-of").textContent = `/ ${run.maxT}`;
+  $("readout-chap").textContent =
+    `${chunk.chapter ? chunk.chapter + " · " : ""}${Math.round(chunk.fraction * 100)}%`;
   $("bars-t").textContent = state.t;
-  updateBars(opts.instant);
-  updateChartT();
-  updateText();
+  if (changed || opts.instant) { updateBars(opts.instant); updateText(opts.instant); }
+  if (opts.tf != null) setPlayhead(opts.tf);
+  else if (opts.instant || reducedMotion()) setPlayhead(state.t);
+  else glideTo(state.t, 260);
+}
+
+function setPlayhead(tf) {
+  state.tf = Math.max(1, Math.min(state.run.maxT, tf));
+  renderPlayhead();
+}
+
+/* Ease the playhead from where it is to `target` over `ms`. */
+function glideTo(target, ms) {
+  cancelAnimationFrame(state.raf);
+  const from = state.tf, start = performance.now();
+  const frame = (now) => {
+    const k = Math.min(1, (now - start) / ms);
+    const e = 1 - Math.pow(1 - k, 3);   // ease-out cubic
+    setPlayhead(from + (target - from) * e);
+    if (k < 1) state.raf = requestAnimationFrame(frame);
+  };
+  state.raf = requestAnimationFrame(frame);
 }
 
 function setHover(i) {
@@ -243,47 +278,61 @@ function drawChart() {
   out += `<text class="axis-title" x="${w - M.r}" y="${h - 4}" text-anchor="end">chunk →</text>`;
   // Draw muted lines first so coloured ones sit on top.
   const drawOrder = [...run.candidates].sort((a, b) => (a.kind === "series") - (b.kind === "series"));
-  out += `<g class="lines">`;
+  // Lines are drawn in full ONCE; a clip rectangle reveals them up to the
+  // playhead, so moving through the book never rebuilds anything.
+  out += `<defs><clipPath id="reveal"><rect id="reveal-rect" x="0" y="0" height="${h}" width="0"/></clipPath></defs>`;
+  out += `<g class="lines" id="lines">`;
   for (const c of drawOrder) {
-    out += `<path class="series ${c.kind}" data-i="${c.i}" style="stroke:${c.kind === "series" ? c.color : ""}"/>`;
+    out += `<path class="series ${c.kind}" data-i="${c.i}" d="${pathFor(c)}" style="stroke:${c.kind === "series" ? c.color : ""}"/>`;
   }
   out += `</g>`;
   out += `<line class="hover-x" id="hover-x" y1="${M.t}" y2="${h - M.b}" visibility="hidden"/>`;
   out += `<line class="marker" id="marker" y1="${M.t - 4}" y2="${h - M.b}"/>`;
-  out += `<g id="dots"></g>`;
+  out += `<g id="dots">` + run.candidates.filter((c) => c.kind === "series")
+    .map((c) => `<circle class="dot" data-i="${c.i}" r="4.5" fill="${c.color}"/>`).join("") + `</g>`;
   out += `<rect class="overlay" id="overlay" x="${M.l}" y="0" width="${w - M.l - M.r}" height="${h}"/>`;
   svg.innerHTML = out;
   bindChartPointer();
   updateChartT();
 }
 
-function pathFor(c, upTo) {
-  const run = state.run;
+function pathFor(c) {
   let d = "";
-  for (const s of run.steps) {
-    if (s.t > upTo) break;
-    d += `${d ? "L" : "M"}${geom.x(s.t).toFixed(1)},${yFor(s.p[c.i]).toFixed(1)}`;
-  }
+  for (const s of state.run.steps) d += `${d ? "L" : "M"}${geom.x(s.t).toFixed(1)},${yFor(s.p[c.i]).toFixed(1)}`;
   return d;
 }
 
-function updateChartT() {
+/* Probability of candidate i at a fractional playhead position. */
+function pAt(i, tf) {
   const run = state.run;
-  if (!run || !geom) return;
-  const upTo = state.fullRun ? run.maxT : state.t;
-  for (const el of $("chart").querySelectorAll(".series")) {
-    const c = run.candidates[Number(el.dataset.i)];
-    el.setAttribute("d", state.hidden.has(c.i) ? "" : pathFor(c, upTo));
-  }
-  const mx = geom.x(state.t);
+  const a = Math.floor(tf), b = Math.min(run.maxT, a + 1), k = tf - a;
+  const pa = run.byT.get(a).p[i], pb = run.byT.get(b).p[i];
+  return pa + (pb - pa) * k;
+}
+
+/* Everything on the chart that depends on the playhead position. Cheap: it
+ * only moves a clip edge, a line, and a few dots. */
+function renderPlayhead() {
+  if (!geom || !state.run) return;
+  const mx = geom.x(state.tf);
+  $("reveal-rect").setAttribute("width", state.fullRun ? geom.w : mx + 1);
   const marker = $("marker");
   marker.setAttribute("x1", mx);
   marker.setAttribute("x2", mx);
-  const step = run.byT.get(state.t);
-  $("dots").innerHTML = run.candidates
-    .filter((c) => c.kind === "series" && !state.hidden.has(c.i))
-    .map((c) => `<circle class="dot" data-i="${c.i}" cx="${mx}" cy="${yFor(step.p[c.i])}" r="4.5" fill="${c.color}"/>`)
-    .join("");
+  for (const dot of $("dots").children) {
+    dot.setAttribute("cx", mx);
+    dot.setAttribute("cy", yFor(pAt(Number(dot.dataset.i), state.tf)));
+  }
+}
+
+/* Visibility (legend toggles, full-run) changed. */
+function updateChartT() {
+  if (!state.run || !geom) return;
+  $("lines").setAttribute("clip-path", state.fullRun ? "" : "url(#reveal)");
+  for (const el of $("chart").querySelectorAll(".series, .dot")) {
+    el.style.display = state.hidden.has(Number(el.dataset.i)) ? "none" : "";
+  }
+  renderPlayhead();
   updateHover();
 }
 
@@ -299,12 +348,18 @@ function bindChartPointer() {
     dragging = true;
     overlay.setPointerCapture(ev.pointerId);
     pause();
-    setT(geom.tAt(local(ev)[0]));
+    const tf = geom.tAt(local(ev)[0]);
+    setT(tf);                      // click: glide to the chunk
     hideTip();
   });
   overlay.addEventListener("pointermove", (ev) => {
     const [px, py] = local(ev);
-    if (dragging) { setT(geom.tAt(px)); return; }
+    if (dragging) {             // drag: the playhead follows the pointer exactly
+      const tf = Math.max(1, Math.min(state.run.maxT, geom.tAt(px)));
+      cancelAnimationFrame(state.raf);
+      setT(tf, { tf });
+      return;
+    }
     hoverAt(px, py);
   });
   const end = (ev) => {
@@ -312,7 +367,7 @@ function bindChartPointer() {
     dragging = false;
     try { overlay.releasePointerCapture(ev.pointerId); } catch (_) {}
   };
-  overlay.addEventListener("pointerup", end);
+  overlay.addEventListener("pointerup", (ev) => { if (dragging) glideTo(state.t, 160); end(ev); });
   overlay.addEventListener("pointercancel", end);
   overlay.addEventListener("pointerleave", () => { if (!dragging) { setHover(null); hideTip(); } });
 }
@@ -321,7 +376,7 @@ function bindChartPointer() {
  * tooltip lists the top values at the hovered chunk. */
 function hoverAt(px, py) {
   const run = state.run;
-  const upTo = state.fullRun ? run.maxT : state.t;
+  const upTo = state.fullRun ? run.maxT : state.tf;
   const t = Math.max(1, Math.min(run.maxT, Math.round(geom.tAt(px))));
   const hx = $("hover-x");
   if (t > upTo) { setHover(null); hideTip(); hx.setAttribute("visibility", "hidden"); return; }
@@ -416,7 +471,7 @@ function updateHover() {
     const el = $("chart").querySelector(`.series[data-i="${h}"]`);
     if (el) el.parentNode.appendChild(el);
   }
-  updateText();
+  renderTextBody();
 }
 
 // ---------------------------------------------------------------------------
@@ -424,12 +479,28 @@ function updateHover() {
 // ---------------------------------------------------------------------------
 
 let shownT = null;
-function updateText() {
+/* Chunk t changed: swap the text with a short cross-fade rather than a snap. */
+function updateText(instant) {
   const run = state.run;
   const chunk = run.chunkByT.get(state.t);
   $("chunk-title").textContent = `Chunk ${state.t} of ${run.n_chunks}`;
   $("chunk-sub").textContent =
     `${chunk.chapter ? chunk.chapter + " · " : ""}${Math.round(chunk.fraction * 100)}% through the book`;
+  const box = $("chunktext");
+  renderTextBody();
+  if (!state.showText) return;
+  if (!instant && !reducedMotion()) {
+    box.classList.remove("fade");
+    void box.offsetWidth;          // restart the CSS animation
+    box.classList.add("fade");
+  }
+}
+
+/* The chunk's paragraphs, with the hovered character's names marked. */
+function renderTextBody() {
+  const run = state.run;
+  if (!run) return;
+  const chunk = run.chunkByT.get(state.t);
   let html = chunk.text.split("\n\n").map((p) => `<p>${esc(p)}</p>`).join("");
   const c = state.hover != null ? run.candidates[state.hover] : null;
   if (c && c.names.length) {
@@ -442,34 +513,56 @@ function updateText() {
   if (shownT !== state.t) { box.scrollTop = 0; shownT = state.t; }
 }
 
+function setShowText(on) {
+  state.showText = on;
+  $("text-panel").hidden = !on;
+  $("view-run").classList.toggle("no-text", !on);
+  const b = $("texttoggle");
+  b.setAttribute("aria-pressed", String(on));
+  b.textContent = on ? "Hide text" : "Show text";
+  try { localStorage.setItem("dj.showText", on ? "1" : "0"); } catch (_) {}
+  if (on && state.run) updateText(true);
+  // The chart and bars resize via the ResizeObserver.
+}
+
 // ---------------------------------------------------------------------------
 // Playback + controls
 // ---------------------------------------------------------------------------
 
 function interval() { return 1000 / (BASE_STEPS_PER_SEC * state.speed); }
 
+/* Playback moves the playhead continuously (no per-step jumps). The chart
+ * glides; bars and text switch to chunk t as soon as the playhead heads
+ * toward it, and the bars take the whole step to slide into place. */
 function play() {
   const run = state.run;
   if (!run) return;
-  if (state.t >= run.maxT) setT(1);
+  cancelAnimationFrame(state.raf);
+  if (state.t >= run.maxT) setT(1, { instant: true });
+  state.tf = state.t;
   state.playing = true;
-  if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    // Bars glide for most of each step, so fast playback still reads as motion.
-    document.documentElement.style.setProperty("--dur", `${Math.min(350, interval() * 0.85)}ms`);
+  if (!reducedMotion()) {
+    document.documentElement.style.setProperty("--dur", `${Math.round(interval() * 0.95)}ms`);
+    document.documentElement.style.setProperty("--textdur", `${Math.round(Math.min(380, interval() * 0.7))}ms`);
   }
   renderPlayButton();
-  const tick = () => {
+  let last = performance.now();
+  const frame = (now) => {
     if (!state.playing) return;
-    if (state.t >= run.maxT) { pause(); return; }
-    setT(state.t + 1);
-    state.timer = setTimeout(tick, interval());
+    const dt = Math.min(0.1, (now - last) / 1000);
+    last = now;
+    const tf = Math.min(run.maxT, state.tf + dt * BASE_STEPS_PER_SEC * state.speed);
+    setT(Math.ceil(tf - 1e-6), { tf });
+    if (tf >= run.maxT) { pause(); return; }
+    state.raf = requestAnimationFrame(frame);
   };
-  state.timer = setTimeout(tick, interval());
+  state.raf = requestAnimationFrame(frame);
 }
 function pause() {
+  if (state.playing) cancelAnimationFrame(state.raf);
   state.playing = false;
-  clearTimeout(state.timer);
   document.documentElement.style.removeProperty("--dur");
+  document.documentElement.style.removeProperty("--textdur");
   renderPlayButton();
 }
 function renderPlayButton() {
@@ -498,8 +591,9 @@ function wireControls() {
   $("scrub").addEventListener("input", (e) => { pause(); setT(Number(e.target.value)); });
   $("speed").addEventListener("change", (e) => {
     state.speed = Number(e.target.value);
-    if (state.playing) { pause(); play(); }
+    if (state.playing) { pause(); play(); }   // picks up the new pace from where it is
   });
+  $("texttoggle").addEventListener("click", () => setShowText(!state.showText));
   $("fullrun").addEventListener("change", (e) => { state.fullRun = e.target.checked; updateChartT(); });
   $("logscale").addEventListener("change", (e) => { state.log = e.target.checked; drawChart(); });
   $("tab-run").addEventListener("click", () => showTab("run"));
@@ -516,6 +610,8 @@ function wireControls() {
     } else if (e.key === " " && tag !== "BUTTON") {
       e.preventDefault();
       state.playing ? pause() : play();
+    } else if (e.key === "t" || e.key === "T") {
+      setShowText(!state.showText);
     } else if (e.key === "Home") { e.preventDefault(); step(-Infinity); }
     else if (e.key === "End") { e.preventDefault(); step(Infinity); }
   });

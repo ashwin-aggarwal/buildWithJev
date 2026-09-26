@@ -81,7 +81,9 @@ The whole pipeline has now run for real (not just mock), and it works.
   **`/live`**.
 - **One piece of state, `t`.** Every control goes through `setT()`: scrubber,
   prev/next, play (0.5×–4×, 1× = 2 chunks/s), ←/→ (Shift = 10), Space,
-  Home/End, and click/drag on the curve. There are three panels:
+  Home/End, and click/drag on the curve. Motion is continuous: the playhead
+  (`state.tf`) is a float, lines are drawn once and revealed by a sliding clip,
+  the marker and dots glide, and the text cross-fades. There are three panels:
   - bars at t, animated re-sorting, fixed 0–1 scale;
   - the line chart, which draws only up to t by default ("Show full run" to see
     all), with a log-scale toggle (floor 1%, since Jev reports 2 decimals);

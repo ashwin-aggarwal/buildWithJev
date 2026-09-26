@@ -32,7 +32,7 @@
   <p>Create one with <code>uv run python scripts/run_curve.py --book &lt;book_id&gt;</code>, then reload this page.</p>
 </div>
 
-<main id="view-run" class="run" role="tabpanel" aria-labelledby="tab-run" hidden>
+<main id="view-run" class="run no-text" role="tabpanel" aria-labelledby="tab-run" hidden>
   <section class="panel bars-panel" aria-label="Probabilities at the current chunk">
     <div class="panel-head">
       <h2>Suspects at chunk <span id="bars-t">–</span></h2>
@@ -55,7 +55,7 @@
     <div class="legend" id="legend" aria-label="Legend: click to show or hide a line"></div>
   </section>
 
-  <section class="panel text-panel" aria-label="Text of the current chunk">
+  <section class="panel text-panel" id="text-panel" aria-label="Text of the current chunk" hidden>
     <div class="panel-head text-head">
       <h2 id="chunk-title">Chunk –</h2>
       <div class="muted" id="chunk-sub"></div>
@@ -73,8 +73,13 @@
     <button class="icon" id="next" title="Next chunk (→)" aria-label="Next chunk">
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 3.5 10 8l-4.5 4.5" /></svg>
     </button>
+    <div class="where" aria-live="off">
+      <span class="where-k">Chunk</span>
+      <span class="where-n" id="readout-num">–</span>
+      <span class="where-of" id="readout-of">/ –</span>
+      <span class="where-chap" id="readout-chap"></span>
+    </div>
     <input type="range" id="scrub" min="1" max="1" value="1" aria-label="Chunk" />
-    <span class="readout" id="readout">– / –</span>
     <label class="speed">
       <span>Speed</span>
       <select id="speed">
@@ -84,6 +89,7 @@
         <option value="4">4×</option>
       </select>
     </label>
+    <button class="pill" id="texttoggle" aria-pressed="false" aria-controls="text-panel" title="Show or hide the text Jev is reading (T)">Show text</button>
   </div>
 </main>
 
