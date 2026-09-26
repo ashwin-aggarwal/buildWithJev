@@ -6,3 +6,6 @@ Training Jev to play a game
 - Tetris 
 - blackjack (use 3110 project)
 
+
+Filtering down big dataset before it gets to System2 model in order to save compute and not waste time, since these big systems take lots of time to
+evaluate
