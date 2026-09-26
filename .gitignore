@@ -1,0 +1,23 @@
+# Secrets — never commit
+.env
+*.key
+
+# Cached Jev API responses (hashed) — regenerable, don't commit
+.cache/
+
+# Raw downloaded texts — regenerable from source URLs
+data/raw/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+# uv.lock is intentionally committed for reproducible installs.
+
+# OS / editor
+.DS_Store
+.ipynb_checkpoints/

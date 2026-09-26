@@ -1,0 +1,26 @@
+[project]
+name = "detective-jev"
+version = "0.1.0"
+description = "The Whodunit Curve: track Jev's belief about the killer across a murder mystery."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "requests==2.32.3",
+    "python-dotenv==1.0.1",
+    "tiktoken==0.8.0",
+]
+
+[project.optional-dependencies]
+# For the later visualization step (owned separately). Install with:
+#   uv sync --extra viz
+viz = [
+    "pandas==2.2.3",
+    "matplotlib==3.9.2",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/detective_jev"]
