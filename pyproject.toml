@@ -14,7 +14,12 @@ dependencies = [
     "pandas==2.2.3",
     "pyarrow==25.0.1",
     "anthropic==1.8.0",
+    "pypdf==6.19.0",
 ]
+
+[project.scripts]
+# `uv run detective-jev run mybook.pdf` / `uv run detective-jev serve`
+detective-jev = "detective_jev.cli:main"
 
 [project.optional-dependencies]
 # For the later visualization step (owned separately). Install with:

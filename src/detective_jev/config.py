@@ -66,6 +66,7 @@ EXTRACT_CACHE_DIR: Path = PROJECT_ROOT / ".cache" / "extract"  # Anthropic roste
 
 # Ledger pipeline (ingestion -> chunks -> roster -> ledger). See CLAUDE.md.
 HTML_CACHE_DIR: Path = RAW_DIR / "html"     # raw HTML keyed by URL hash (gitignored)
+UPLOADS_DIR: Path = RAW_DIR / "uploads"     # uploaded/local book files by content hash (gitignored)
 BOOKS_DIR: Path = DATA_DIR / "books"        # {book_id}.json.gz
 LEDGERS_DIR: Path = DATA_DIR / "ledgers"    # {book_id}.json.gz + per-run post-hoc sidecars
 ROSTERS_DIR: Path = DATA_DIR / "rosters"    # {book_id}.yaml, hand-editable, authoritative

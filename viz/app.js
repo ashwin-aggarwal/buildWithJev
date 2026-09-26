@@ -73,29 +73,37 @@ async function getJSON(url) {
 }
 
 async function init() {
+  wireControls();
+  wireAdd();
+  let savedText = false;
+  try { savedText = localStorage.getItem("dj.showText") === "1"; } catch (_) {}
+  setShowText(savedText);
+  $("runsel").addEventListener("change", () => loadRun($("runsel").value));
+  let runs;
   try {
-    state.runs = (await getJSON("/api/runs")).runs;
+    runs = (await getJSON("/api/runs")).runs;
   } catch (e) {
     $("bookline").textContent = `Could not load runs: ${e.message}`;
     return;
   }
-  if (!state.runs.length) {
-    $("bookline").textContent = "No saved runs";
+  setRuns(runs);
+  if (!runs.length) {
+    $("bookline").textContent = "No saved runs yet";
     $("empty").hidden = false;
+    showTab("add");
     return;
   }
-  const sel = $("runsel");
-  sel.innerHTML = state.runs.map((r) =>
+  const hash = location.hash.slice(1);
+  showTab(["cost", "add"].includes(hash) ? hash : "run");
+  await loadRun(runs[0].file);
+}
+
+function setRuns(runs) {
+  state.runs = runs;
+  $("runsel").innerHTML = runs.map((r) =>
     `<option value="${esc(r.file)}">${esc(r.title || r.book_id)} · ${esc(r.candidate_set)} · ${esc(r.condition)}${r.mock ? " · MOCK" : ""}</option>`
   ).join("");
-  $("runpick").hidden = state.runs.length < 2;
-  sel.addEventListener("change", () => loadRun(sel.value));
-  wireControls();
-  let savedText = false;
-  try { savedText = localStorage.getItem("dj.showText") === "1"; } catch (_) {}
-  setShowText(savedText);
-  showTab(location.hash === "#cost" ? "cost" : "run");
-  await loadRun(state.runs[0].file);
+  $("runpick").hidden = runs.length < 2;
 }
 
 async function loadRun(file) {
@@ -110,6 +118,9 @@ async function loadRun(file) {
     `${run.title || run.book_id}${run.author ? " · " + run.author : ""} · ${run.candidates.length} candidates · ${run.candidate_set}`;
   $("mockbanner").hidden = !run.mock;
   $("scrub").max = run.steps.length;
+  $("view-run").hidden = state.tab !== "run";
+  $("view-cost").hidden = state.tab !== "cost";
+  $("empty").hidden = true;
   buildBars();
   buildLegend();
   setT(1, { instant: true });
@@ -575,13 +586,15 @@ function step(delta) { pause(); setT(state.t + delta); }
 
 function showTab(tab) {
   state.tab = tab;
-  $("tab-run").setAttribute("aria-selected", String(tab === "run"));
-  $("tab-cost").setAttribute("aria-selected", String(tab === "cost"));
-  $("view-run").hidden = tab !== "run";
-  $("view-cost").hidden = tab !== "cost";
-  history.replaceState(null, "", tab === "cost" ? "#cost" : "#");
-  if (tab === "run") { pause(); requestAnimationFrame(() => { drawChart(); state.run && updateBars(true); }); }
-  else { pause(); loadCost(); }
+  for (const t of ["run", "cost", "add"]) $(`tab-${t}`).setAttribute("aria-selected", String(tab === t));
+  $("view-add").hidden = tab !== "add";
+  $("view-run").hidden = tab !== "run" || !state.run;
+  $("view-cost").hidden = tab !== "cost" || !state.run;
+  $("empty").hidden = tab === "add" || !!state.run;   // Run/Cost with nothing loaded yet
+  history.replaceState(null, "", tab === "run" ? "#" : `#${tab}`);
+  pause();
+  if (tab === "run") requestAnimationFrame(() => { drawChart(); state.run && updateBars(true); });
+  else if (tab === "cost") loadCost();
 }
 
 function wireControls() {
@@ -598,6 +611,7 @@ function wireControls() {
   $("logscale").addEventListener("change", (e) => { state.log = e.target.checked; drawChart(); });
   $("tab-run").addEventListener("click", () => showTab("run"));
   $("tab-cost").addEventListener("click", () => showTab("cost"));
+  $("tab-add").addEventListener("click", () => showTab("add"));
   for (const id of ["c-compress", "c-output", "c-reason"]) $(id).addEventListener("input", renderCost);
 
   document.addEventListener("keydown", (e) => {
@@ -695,6 +709,143 @@ function renderCost() {
       approximation; each provider counts slightly differently. No other model was called: this compares cost only, not speed or accuracy,
       and text models don't return calibrated probabilities the way Jev does.</p>
     ${c.mock ? "<p><b>This is a mock run</b>: its Jev cost is zero and not meaningful.</p>" : ""}`;
+}
+
+// ---------------------------------------------------------------------------
+// Add a book: drop / choose a file or paste a link -> estimate -> run -> watch
+// ---------------------------------------------------------------------------
+
+const add = { book: null, job: null, poll: null };
+
+function addStep(name) {
+  for (const id of ["add-pick", "add-reading", "add-summary", "add-progress"]) $(id).hidden = id !== `add-${name}`;
+}
+function addError(msg) {
+  $("add-error").textContent = msg || "";
+  $("add-error").hidden = !msg;
+}
+
+async function readBook(form) {
+  addError("");
+  addStep("reading");
+  try {
+    const r = await fetch("/api/books/add", { method: "POST", body: form });
+    const body = await r.json();
+    if (!r.ok) throw new Error(body.error || `HTTP ${r.status}`);
+    add.book = body;
+    showSummary();
+  } catch (e) {
+    addStep("pick");
+    addError(e.message);
+  }
+}
+
+function showSummary() {
+  const b = add.book, est = b.estimate;
+  $("sum-title").textContent = b.title || b.book_id;
+  $("sum-meta").textContent =
+    `${b.author ? b.author + " · " : ""}${b.n_words.toLocaleString()} words · ${b.n_chunks} chunks · read from ${String(b.kind || "").toUpperCase()}`;
+  const extra = est.characters_cost != null ? ` + ~$${est.characters_cost.toFixed(3)} for the character list` : "";
+  $("real-title").textContent = `Run it for real · about $${est.jev_cost.toFixed(2)}`;
+  $("real-desc").textContent =
+    `Real Jev predictions${extra}. About ${est.minutes} min. Uses the server's OpenRouter key.`;
+  addStep("summary");
+}
+
+async function startJob(mock) {
+  addError("");
+  try {
+    const r = await fetch("/api/jobs", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ book_id: add.book.book_id, mock }),
+    });
+    const body = await r.json();
+    if (!r.ok) throw new Error(body.error || `HTTP ${r.status}`);
+    add.job = body.job_id;
+    $("prog-title").textContent = `${mock ? "Dry run: " : ""}${add.book.title || add.book.book_id}`;
+    $("stop").hidden = false;
+    $("watch").hidden = true;
+    $("add-another").hidden = true;
+    addStep("progress");
+    pollJob();
+  } catch (e) {
+    addError(e.message);
+  }
+}
+
+async function pollJob() {
+  clearTimeout(add.poll);
+  let job;
+  try { job = await getJSON(`/api/jobs/${add.job}`); }
+  catch (e) { addError(e.message); return; }
+  $("stages").innerHTML = Object.values(job.stages).map((st) => {
+    const pctDone = st.total ? Math.round((st.done / st.total) * 100) : (st.state === "done" ? 100 : 0);
+    const count = st.total && st.state !== "pending" ? ` · ${st.done}/${st.total}` : "";
+    return `<li class="stage ${st.state}">
+      <span class="ico">${st.state === "done" ? "✓" : ""}</span>
+      <span class="lbl">${esc(st.label)}</span>
+      <span class="msg">${esc(st.message || (st.state === "pending" ? "Waiting" : ""))}${count}</span>
+      ${st.total ? `<span class="bar"><i style="width:${pctDone}%"></i></span>` : ""}
+    </li>`;
+  }).join("");
+  if (job.state === "running") { add.poll = setTimeout(pollJob, 600); return; }
+  $("stop").hidden = true;
+  $("add-another").hidden = false;
+  if (job.state === "done") {
+    $("watch").hidden = false;
+    $("watch").onclick = () => openRun(job.result.run_file);
+  } else if (job.state === "cancelled") {
+    addError("Stopped. Everything finished so far is saved; start again to resume.");
+  } else {
+    addError(job.error || "Something went wrong.");
+  }
+}
+
+async function openRun(file) {
+  setRuns((await getJSON("/api/runs")).runs);
+  $("runsel").value = file;
+  await loadRun(file);
+  showTab("run");
+}
+
+function takeFile(file) {
+  if (!file) return;
+  const form = new FormData();
+  form.append("file", file);
+  showTab("add");
+  readBook(form);
+}
+
+function wireAdd() {
+  $("file").addEventListener("change", (e) => takeFile(e.target.files[0]));
+  $("urlform").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const form = new FormData();
+    form.append("url", $("url").value.trim());
+    readBook(form);
+  });
+  $("go-dry").addEventListener("click", () => startJob(true));
+  $("go-real").addEventListener("click", () => startJob(false));
+  $("add-again").addEventListener("click", () => { addError(""); addStep("pick"); });
+  $("add-another").addEventListener("click", () => { addError(""); $("file").value = ""; addStep("pick"); });
+  $("stop").addEventListener("click", () => fetch(`/api/jobs/${add.job}/stop`, { method: "POST" }));
+
+  // Drag a file anywhere onto the page.
+  const drop = $("drop"), veil = $("dropveil");
+  let depth = 0;
+  const hasFile = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
+  window.addEventListener("dragenter", (e) => { if (hasFile(e)) { depth++; veil.hidden = false; } });
+  window.addEventListener("dragleave", () => { if (--depth <= 0) { depth = 0; veil.hidden = true; } });
+  window.addEventListener("dragover", (e) => { if (hasFile(e)) e.preventDefault(); });
+  window.addEventListener("drop", (e) => {
+    if (!hasFile(e)) return;
+    e.preventDefault();
+    depth = 0;
+    veil.hidden = true;
+    takeFile(e.dataTransfer.files[0]);
+  });
+  drop.addEventListener("dragover", () => drop.classList.add("over"));
+  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
 }
 
 init();

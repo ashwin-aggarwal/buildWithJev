@@ -182,7 +182,8 @@ def append_entry(ledger: dict[str, Any], entry: dict[str, Any]) -> None:
     ledger["entries"].append(entry)
 
 
-def build_ledger(book_id: str, *, mock: bool = False, force: bool = False) -> dict[str, Any]:
+def build_ledger(book_id: str, *, mock: bool = False, force: bool = False,
+                 progress=None) -> dict[str, Any]:
     """Stage entry point: compress every chunk not yet in the ledger.
 
     Idempotent: a complete ledger is a no-op. Saved after every entry, so a
@@ -214,6 +215,8 @@ def build_ledger(book_id: str, *, mock: bool = False, force: bool = False) -> di
                               **content})
         save_ledger(ledger)
         logger.info("%s: compressed chunk %d/%d", book_id, t, n)
+        if progress:
+            progress(t, n)
     return ledger
 
 

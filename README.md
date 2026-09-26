@@ -79,11 +79,11 @@ uv sync
 uv run python scripts/smoke_test.py                           # one real call (~free) to confirm billing
 uv run python scripts/run_curve.py --book pg69087 --mock --limit 5   # free dry run, included novel
 uv run python scripts/run_curve.py --book pg69087             # real run, ~$0.04
-uv run python scripts/serve.py                                # browser demo: Book mode, untick Mock
+uv run detective-jev serve                                    # the viewer: watch runs, add books
 ```
 
-Adding a book: `cli ingest <html-url>` → `cli roster <id>` → `cli ledger <id> --real`
-→ `run_curve.py --book <id>` (run each as `uv run python -m detective_jev.cli ...`).
+Adding a book is one step: drag a PDF/EPUB/TXT/HTML file onto the **+ Add a book**
+tab (`uv run detective-jev serve`), or run `uv run detective-jev run book.pdf`.
 Use **book mode** for anything longer than a short story. The older paragraph
 mode resends the whole text so far on every step and hits Jev's 32K-token limit
 around 25,000 words.

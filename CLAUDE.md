@@ -120,6 +120,43 @@ The whole pipeline has now run for real (not just mock), and it works.
   advertisements, not story text. Ingest does not strip trailing ads, so Jev
   read them at the last step.
 
+### One-step add-a-book: CLI + drag-and-drop (2026-09-26)
+
+- **Any format.** `ingest.ingest_source(source | data+filename)` reads a URL, a
+  local file, or uploaded bytes as HTML, TXT, PDF, or EPUB. Detection is by
+  content (`%PDF`, zip) and then by extension. The non-HTML readers live in
+  `sources.py`:
+  - TXT: blank-line paragraphs; Gutenberg markers, `_italics_`, transcriber's
+    notes, and front matter are stripped.
+  - PDF (pypdf): paragraphs rebuilt from lines; running headers, page numbers,
+    hyphenation, and small-caps spacing are fixed; scanned PDFs are refused.
+  - EPUB: spine order, via `parse_html`.
+
+  Chapter headings are recognised by shape (`is_heading`). On *The Murder of
+  Roger Ackroyd*, TXT, EPUB, and PDF match the HTML text 99.8–100% word for word.
+  Uploads are cached in `data/raw/uploads/`. Books gain a `source_kind` field
+  (additive).
+- **`pipeline.run_all`** runs read → characters → ledger → inference with
+  progress events and cancellation. `pipeline.run_inference` is now the one
+  inference loop; `run_curve.py --book` calls it. `pipeline.estimate` is a
+  cost/time estimate calibrated on the real Ackroyd run.
+- **Rosters for dry runs:** `roster.get_roster(mock=True)` writes a free
+  heuristic placeholder (`source: heuristic ...`). A real run replaces it
+  automatically. If `EXTRACTION_PROVIDER=anthropic` but only an OpenRouter key
+  is set, extraction falls back to OpenRouter.
+- **CLI:** the `detective-jev` entry point (`[project.scripts]`) adds
+  `run <file-or-url> [--dry-run] [--yes]`, which estimates, confirms, and runs
+  everything, and `serve [--port]`, which opens the viewer in a browser.
+- **Web:** a "+ Add a book" tab with drop zone, link box, estimate, and a
+  choice between "Free dry run" and "Run it for real", then live stage
+  progress and "Watch it →". Dropping a file anywhere on the page works too.
+  - Endpoints: `POST /api/books/add` (multipart `file` or `url`; free),
+    `POST /api/jobs {book_id, mock}` (one job at a time; background thread),
+    `GET /api/jobs/<id>`, `POST /api/jobs/<id>/stop`.
+  - Upload limit 80 MB.
+  - Real runs need `OPENROUTER_API_KEY` on the server; the key never reaches
+    the browser.
+
 ## Next steps (roadmap for future sessions)
 
 1. **Test on more novels — rule out training-data contamination.** Roger Ackroyd

@@ -4,11 +4,13 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Detective Jev</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>%F0%9F%95%B5</text></svg>" />
+<link rel="icon" type="image/png" href="/static/img/favicon.png?v=2" />
+<link rel="apple-touch-icon" href="/static/img/apple-touch-icon.png?v=2" />
 <link rel="stylesheet" href="/static/app.css" />
 </head>
 <body>
 <header class="top">
+  <img class="logo" src="/static/img/logo.png" alt="" width="40" height="40" />
   <div class="brand">
     <h1>Detective Jev</h1>
     <div class="sub" id="bookline">Loading…</div>
@@ -16,6 +18,7 @@
   <nav class="tabs" role="tablist" aria-label="Views">
     <button role="tab" id="tab-run" aria-controls="view-run" aria-selected="true">Run</button>
     <button role="tab" id="tab-cost" aria-controls="view-cost" aria-selected="false">Cost analysis</button>
+    <button role="tab" id="tab-add" aria-controls="view-add" aria-selected="false">+ Add a book</button>
   </nav>
   <label class="runpick" id="runpick" hidden>
     <span>Run</span>
@@ -29,7 +32,7 @@
 
 <div class="empty" id="empty" hidden>
   <h2>No saved runs yet</h2>
-  <p>Create one with <code>uv run python scripts/run_curve.py --book &lt;book_id&gt;</code>, then reload this page.</p>
+  <p>Add a book to get started: drop a PDF, EPUB, TXT or HTML file on the <b>+ Add a book</b> tab.</p>
 </div>
 
 <main id="view-run" class="run no-text" role="tabpanel" aria-labelledby="tab-run" hidden>
@@ -121,6 +124,60 @@
     <div class="notes" id="costnotes"></div>
   </section>
 </main>
+
+<main id="view-add" class="add" role="tabpanel" aria-labelledby="tab-add" hidden>
+  <section class="panel add-panel">
+    <div class="add-step" id="add-pick">
+      <h2 class="add-title">Add a detective novel</h2>
+      <p class="muted">Jev will read it chunk by chunk and guess the culprit as it goes.</p>
+      <label class="drop" id="drop" for="file">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0-4.5 4.5M12 4l4.5 4.5M4 16v2.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V16"/></svg>
+        <span class="drop-main">Drop a book here</span>
+        <span class="muted">PDF, EPUB, TXT or HTML · or <u>choose a file</u></span>
+        <input type="file" id="file" accept=".pdf,.epub,.txt,.html,.htm,.xhtml" hidden />
+      </label>
+      <form class="urlrow" id="urlform">
+        <input type="url" id="url" placeholder="…or paste a link, e.g. a Project Gutenberg page" />
+        <button class="pill" type="submit">Read link</button>
+      </form>
+    </div>
+
+    <div class="add-step" id="add-reading" hidden>
+      <div class="spinner" aria-hidden="true"></div>
+      <p>Reading the book…</p>
+    </div>
+
+    <div class="add-step" id="add-summary" hidden>
+      <h2 class="add-title" id="sum-title"></h2>
+      <p class="muted" id="sum-meta"></p>
+      <div class="choice">
+        <button class="choice-card" id="go-dry">
+          <b>Free dry run</b>
+          <span>Checks everything works using random numbers. No API calls, costs nothing.</span>
+        </button>
+        <button class="choice-card primary" id="go-real">
+          <b id="real-title">Run it for real</b>
+          <span id="real-desc"></span>
+        </button>
+      </div>
+      <button class="linkbtn" id="add-again">Choose a different book</button>
+    </div>
+
+    <div class="add-step" id="add-progress" hidden>
+      <h2 class="add-title" id="prog-title"></h2>
+      <ol class="stages" id="stages"></ol>
+      <div class="add-actions">
+        <button class="pill" id="stop">Stop</button>
+        <button class="pill primary" id="watch" hidden>Watch it →</button>
+        <button class="linkbtn" id="add-another" hidden>Add another book</button>
+      </div>
+    </div>
+
+    <p class="add-error" id="add-error" role="alert" hidden></p>
+  </section>
+</main>
+
+<div class="dropveil" id="dropveil" hidden><div>Drop the book to add it</div></div>
 
 <script src="/static/app.js"></script>
 </body>

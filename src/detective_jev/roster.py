@@ -312,7 +312,12 @@ def _call_extraction_openrouter(book: dict[str, Any]) -> dict[str, Any]:
 
 
 def _call_extraction_api(book: dict[str, Any]) -> dict[str, Any]:
+    import os
+
     provider = config.EXTRACTION_PROVIDER
+    if provider == "anthropic" and not config.anthropic_api_key() and os.getenv(config.OPENROUTER_KEY_ENV):
+        logger.info("No %s set; extracting the roster through OpenRouter instead.", config.ANTHROPIC_KEY_ENV)
+        provider = "openrouter"
     if provider == "openrouter":
         return _call_extraction_openrouter(book)
     if provider == "anthropic":
@@ -390,17 +395,58 @@ def load_roster(book_id: str, book: dict[str, Any] | None = None) -> dict[str, A
     return roster
 
 
-def get_roster(book_id: str, *, force: bool = False) -> dict[str, Any]:
+HEURISTIC_SOURCE = "heuristic (free placeholder for dry runs; not a real character list)"
+
+
+def heuristic_roster(book: dict[str, Any], max_characters: int = 12) -> dict[str, Any]:
+    """A FREE stand-in roster for mock runs: the most frequent capitalised
+    names in the text. Never used for a real run (see get_roster)."""
+    counts: Counter[str] = Counter()
+    for t in range(1, book["n_chunks"] + 1):
+        for s in storage.chunk_sentences(book, t):
+            words = re.findall(r"\b[A-Z][a-z]{2,}\b", s["text"])
+            first = re.match(r"[\W_]*(\w+)", s["text"])
+            for i, w in enumerate(words):
+                if not (i == 0 and first and first.group(1) == w) and w not in _NOT_NAMES:
+                    counts[w] += 1
+    names = [w for w, n in counts.most_common(max_characters) if n >= 3]
+    roster = {
+        "book_id": book["book_id"],
+        "pipeline_version": config.PIPELINE_VERSION,
+        "source": HEURISTIC_SOURCE,
+        "characters": [{"canonical": n, "aliases": [], "is_suspect": False, "uncertain": True,
+                        "first_mention_chunk": None, "evidence": {}} for n in names],
+    }
+    firsts = first_mention_chunks(book, roster)
+    for c in roster["characters"]:
+        c["first_mention_chunk"] = firsts[c["canonical"]]
+    return roster
+
+
+def is_heuristic(roster: dict[str, Any]) -> bool:
+    return str(roster.get("source", "")).startswith("heuristic")
+
+
+def get_roster(book_id: str, *, force: bool = False, mock: bool = False) -> dict[str, Any]:
     """Stage entry point: load the roster, extracting it first if none exists.
 
     force=True re-runs extraction (bypassing the response cache) and
     overwrites the YAML, keeping a .bak copy of the old file.
+    mock=True never calls a model: with no roster yet it writes a free
+    heuristic placeholder, which a later real run replaces automatically.
     """
     book = storage.load_book(book_id)
     path = storage.roster_path(book_id)
     if path.exists() and not force:
         roster = load_roster(book_id, book)
-        validate_roster(roster, book)
+        if mock or not is_heuristic(roster):
+            validate_roster(roster, book)
+            return roster
+        logger.info("Replacing the placeholder roster for %s with a real extraction.", book_id)
+    if mock and not path.exists():
+        roster = heuristic_roster(book)
+        save_roster(roster)
+        logger.info("Wrote a placeholder roster for %s (mock run; no model called).", book_id)
         return roster
     if path.exists():
         path.with_name(path.name + ".bak").write_text(path.read_text(encoding="utf-8"), encoding="utf-8")

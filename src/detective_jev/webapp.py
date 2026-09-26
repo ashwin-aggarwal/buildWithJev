@@ -16,6 +16,7 @@ Run it with:  python scripts/serve.py
 from __future__ import annotations
 
 import json
+import threading
 import time
 from pathlib import Path
 from typing import Any, Iterator
@@ -296,6 +297,7 @@ def live() -> Response:
 
 
 _STATIC = {"app.js": "text/javascript", "app.css": "text/css"}
+_IMAGES = {"favicon.png", "apple-touch-icon.png", "logo.png"}
 
 
 @app.get("/static/<name>")
@@ -305,8 +307,131 @@ def static_file(name: str) -> Response:
     return Response((_VIZ_DIR / name).read_text(encoding="utf-8"), mimetype=_STATIC[name])
 
 
+@app.get("/static/img/<name>")
+def static_image(name: str) -> Response:
+    if name not in _IMAGES:
+        return Response("not found", status=404)
+    return Response((_VIZ_DIR / "img" / name).read_bytes(), mimetype="image/png",
+                    headers={"Cache-Control": "max-age=86400"})
+
+
+@app.get("/favicon.ico")
+def favicon() -> Response:
+    return static_image("favicon.png")
+
+
 def _json(payload: Any, status: int = 200) -> Response:
     return Response(json.dumps(payload, ensure_ascii=False), status=status, mimetype="application/json")
+
+
+# --- Add a book: upload/URL -> one background job running the whole pipeline ---------
+
+app.config["MAX_CONTENT_LENGTH"] = 80 * 1024 * 1024   # uploads up to 80 MB
+
+_JOBS: dict[str, dict[str, Any]] = {}
+_JOBS_LOCK = threading.Lock()
+
+
+@app.post("/api/books/add")
+def api_add_book() -> Response:
+    """Read a book (free) from an uploaded file or a URL; return it plus a cost estimate."""
+    from .ingest import IngestError, ingest_source
+    from .pipeline import estimate
+    from .roster import load_roster
+
+    try:
+        upload = request.files.get("file")
+        if upload and upload.filename:
+            book = ingest_source(data=upload.read(), filename=upload.filename)
+        else:
+            url = (request.form.get("url") or (request.get_json(silent=True) or {}).get("url") or "").strip()
+            if not url.lower().startswith(("http://", "https://")):
+                return _json({"error": "Choose a file, or paste a link starting with http:// or https://"}, 400)
+            book = ingest_source(url)
+    except IngestError as exc:
+        return _json({"error": str(exc)}, 400)
+    except Exception as exc:  # noqa: BLE001 - network errors etc. go back to the page
+        return _json({"error": f"Could not read that book: {exc}"}, 400)
+
+    from . import storage
+
+    n_chars = None
+    if storage.roster_path(book["book_id"]).exists():
+        n_chars = len(load_roster(book["book_id"])["characters"])
+    return _json({
+        "book_id": book["book_id"], "title": book.get("title"), "author": book.get("author"),
+        "n_words": book["n_words"], "n_chunks": book["n_chunks"], "kind": book.get("source_kind"),
+        "estimate": estimate(book, n_chars),
+    })
+
+
+def _run_job(job: dict[str, Any]) -> None:
+    from .pipeline import STAGE_LABELS, Cancelled, run_all
+
+    def on_progress(ev: dict[str, Any]) -> None:
+        with _JOBS_LOCK:
+            job["stages"][ev["stage"]] = {"label": STAGE_LABELS[ev["stage"]], "state": ev["state"],
+                                          "done": ev["done"], "total": ev["total"],
+                                          "message": ev["message"] or job["stages"][ev["stage"]].get("message", "")}
+    try:
+        result = run_all(book_id=job["book_id"], mock=job["mock"], progress=on_progress,
+                         should_stop=lambda: job["stop"])
+        with _JOBS_LOCK:
+            job.update(state="done", result=result)
+    except Cancelled:
+        with _JOBS_LOCK:
+            job.update(state="cancelled")
+    except Exception as exc:  # noqa: BLE001 - report any failure to the page
+        with _JOBS_LOCK:
+            job.update(state="error", error=str(exc))
+
+
+@app.post("/api/jobs")
+def api_start_job() -> Response:
+    """Run the whole pipeline for an already-read book in the background."""
+    import os
+    import uuid
+
+    from .pipeline import STAGE_LABELS, STAGES
+
+    body = request.get_json(silent=True) or {}
+    book_id = str(body.get("book_id") or "")
+    mock = bool(body.get("mock", True))
+    from . import storage
+
+    if not storage.book_exists(book_id):
+        return _json({"error": f"Unknown book {book_id!r}; add it first."}, 400)
+    if not mock and config.PROVIDER == "openrouter" and not os.getenv(config.OPENROUTER_KEY_ENV):
+        return _json({"error": f"{config.OPENROUTER_KEY_ENV} is not set on the server, so only a dry run is possible."}, 400)
+    with _JOBS_LOCK:
+        if any(j["state"] == "running" for j in _JOBS.values()):
+            return _json({"error": "Another book is already being processed. Wait for it to finish."}, 409)
+        job = {"id": uuid.uuid4().hex[:12], "book_id": book_id, "mock": mock, "state": "running",
+               "stop": False, "error": None, "result": None,
+               "stages": {s: {"label": STAGE_LABELS[s], "state": "pending", "done": 0, "total": 0, "message": ""}
+                          for s in STAGES}}
+        _JOBS[job["id"]] = job
+    threading.Thread(target=_run_job, args=(job,), daemon=True).start()
+    return _json({"job_id": job["id"]})
+
+
+@app.get("/api/jobs/<job_id>")
+def api_job(job_id: str) -> Response:
+    with _JOBS_LOCK:
+        job = _JOBS.get(job_id)
+        if job is None:
+            return _json({"error": "No such job."}, 404)
+        return _json({k: v for k, v in job.items() if k != "stop"})
+
+
+@app.post("/api/jobs/<job_id>/stop")
+def api_stop_job(job_id: str) -> Response:
+    with _JOBS_LOCK:
+        job = _JOBS.get(job_id)
+        if job is None:
+            return _json({"error": "No such job."}, 404)
+        job["stop"] = True
+    return _json({"ok": True})
 
 
 @app.get("/api/runs")

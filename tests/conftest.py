@@ -87,6 +87,7 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DATA_DIR", data)
     monkeypatch.setattr(config, "RAW_DIR", data / "raw")
     monkeypatch.setattr(config, "HTML_CACHE_DIR", data / "raw" / "html")
+    monkeypatch.setattr(config, "UPLOADS_DIR", data / "raw" / "uploads")
     monkeypatch.setattr(config, "BOOKS_DIR", data / "books")
     monkeypatch.setattr(config, "LEDGERS_DIR", data / "ledgers")
     monkeypatch.setattr(config, "ROSTERS_DIR", data / "rosters")

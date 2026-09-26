@@ -1,4 +1,7 @@
-"""Stage 1: fetch a book's HTML page, strip boilerplate, and store the chunked book.
+"""Stage 1: read a book (HTML page, plain text, PDF, or EPUB; from a URL, a local
+file, or an upload), strip boilerplate, and store the chunked book.
+
+Non-HTML formats are read by sources.py; this module holds the HTML reader.
 
   - Raw HTML is cached under data/raw/html/ keyed by a hash of the URL and is
     never refetched.
@@ -27,6 +30,7 @@ import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import requests
 from bs4 import BeautifulSoup, NavigableString, Tag
@@ -54,7 +58,7 @@ def html_cache_path(url: str) -> Path:
 
 
 def fetch_html(url: str) -> bytes:
-    """Return the page's raw bytes, fetching only if not already cached."""
+    """Return the URL's raw bytes (any format), fetching only if not already cached."""
     path = html_cache_path(url)
     if path.exists():
         return path.read_bytes()
@@ -212,15 +216,93 @@ def make_book_id(url: str, title: str | None, paragraphs: list[str]) -> str:
     return f"{_slug(title)}-{text_hash(paragraphs)[:8]}"
 
 
+# --- Any source: URL, local file, or uploaded bytes ---------------------------------
+
+SUPPORTED_EXTENSIONS = (".html", ".htm", ".xhtml", ".txt", ".pdf", ".epub")
+
+
+def detect_kind(data: bytes, name: str = "") -> str:
+    """"html" | "txt" | "pdf" | "epub", from the content first, then the name."""
+    if data[:5] == b"%PDF-":
+        return "pdf"
+    if data[:2] == b"PK":
+        return "epub"
+    ext = Path(urlparse(name).path).suffix.lower()
+    if ext in (".html", ".htm", ".xhtml") or re.search(rb"<(html|body|p|div)[\s>]", data[:20000], re.I):
+        return "html"
+    return "txt"
+
+
+def parse_any(data: bytes, name: str = "") -> tuple[str, dict[str, Any]]:
+    from . import sources
+
+    kind = detect_kind(data, name)
+    try:
+        if kind == "html":
+            return kind, parse_html(data)
+        if kind == "pdf":
+            return kind, sources.parse_pdf(data)
+        if kind == "epub":
+            return kind, sources.parse_epub(data)
+        return kind, sources.parse_text(sources.decode(data))
+    except sources.SourceError as exc:
+        raise IngestError(str(exc)) from exc
+
+
+def _title_from_name(name: str) -> str | None:
+    stem = Path(urlparse(name).path).stem
+    stem = re.sub(r"[-_]+", " ", stem).strip()
+    return stem.title() if re.search(r"[A-Za-z]{3}", stem) else None
+
+
+def _save_upload(data: bytes, filename: str) -> Path:
+    ext = Path(filename).suffix.lower() or ".bin"
+    path = config.UPLOADS_DIR / f"{hashlib.sha256(data).hexdigest()[:24]}{ext}"
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+    return path
+
+
+def read_source(source: str | Path | None = None, *, data: bytes | None = None,
+                filename: str | None = None) -> tuple[bytes, str, str]:
+    """(bytes, name, source_url) for a URL, a local path, or uploaded bytes."""
+    if data is not None:
+        name = Path(filename or "upload.txt").name
+        if Path(name).suffix.lower() not in SUPPORTED_EXTENSIONS:
+            raise IngestError(f"Unsupported file type {Path(name).suffix!r}; use one of {', '.join(SUPPORTED_EXTENSIONS)}.")
+        _save_upload(data, name)
+        return data, name, f"upload:{name}"
+    src = str(source)
+    if src.lower().startswith(("http://", "https://")):
+        return fetch_html(src), src, src
+    path = Path(src).expanduser()
+    if not path.is_file():
+        raise IngestError(f"No such file or URL: {src}")
+    return path.read_bytes(), path.name, f"file:{path.name}"
+
+
 # --- Stage entry point ---------------------------------------------------------
 
 def ingest(url: str, *, chunk_size: int | None = None, force: bool = False) -> dict[str, Any]:
-    """Fetch (cached), parse, chunk, and store a book. Returns the book dict."""
+    """Fetch (cached), parse, chunk, and store a book from a URL or local path."""
+    return ingest_source(url, chunk_size=chunk_size, force=force)
+
+
+def ingest_source(source: str | Path | None = None, *, data: bytes | None = None,
+                  filename: str | None = None, chunk_size: int | None = None,
+                  force: bool = False) -> dict[str, Any]:
+    """Parse, chunk, and store a book from a URL, a local file, or uploaded bytes.
+
+    Accepts HTML, plain text, PDF, and EPUB. Returns the book dict.
+    """
     target = chunk_size or config.CHUNK_SIZE_TARGET
-    parsed = parse_html(fetch_html(url))
+    raw, name, source_url = read_source(source, data=data, filename=filename)
+    kind, parsed = parse_any(raw, name)
     if not parsed["paragraphs"]:
-        raise IngestError(f"No body paragraphs found at {url}. Is this the HTML edition?")
-    book_id = make_book_id(url, parsed["title"], parsed["paragraphs"])
+        raise IngestError(f"No story text found in {name}. For web pages, use the HTML edition.")
+    title = re.sub(r"\s*\|\s*Project Gutenberg.*$", "", parsed["title"] or "").strip() or _title_from_name(name)
+    book_id = make_book_id(source_url, title, parsed["paragraphs"])
 
     if storage.book_exists(book_id) and not force:
         logger.info("Book %s already ingested; skipping (use force to re-parse).", book_id)
@@ -229,8 +311,9 @@ def ingest(url: str, *, chunk_size: int | None = None, force: bool = False) -> d
     chunked = build_chunks(parsed["paragraphs"], parsed["chapters"], target)
     book = {
         "book_id": book_id,
-        "source_url": url,
-        "title": parsed["title"],
+        "source_url": source_url,
+        "source_kind": kind,
+        "title": title,
         "author": parsed["author"],
         "n_chunks": len(chunked["chunks"]),
         "n_words": sum(word_count(p) for p in parsed["paragraphs"]),
@@ -245,5 +328,6 @@ def ingest(url: str, *, chunk_size: int | None = None, force: bool = False) -> d
     }
     path = storage.save_book(book)
     storage.update_manifest(book)
-    logger.info("Ingested %s: %d words, %d chunks -> %s", book_id, book["n_words"], book["n_chunks"], path)
+    logger.info("Ingested %s (%s): %d words, %d chunks -> %s", book_id, kind, book["n_words"],
+                book["n_chunks"], path)
     return book

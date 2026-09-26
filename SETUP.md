@@ -124,7 +124,7 @@ Options:
 ### B3. Watch it in the browser
 
 ```bash
-uv run python scripts/serve.py      # then open http://127.0.0.1:8000
+uv run detective-jev serve          # opens http://127.0.0.1:8000 in your browser
 ```
 
 The page replays any saved run from B2. It makes no API calls and costs
@@ -145,96 +145,92 @@ and is never sent to the browser.
 
 ---
 
-## Part C — Add a new book
+## Part C — Add a new book (one step)
 
-Budget about **$0.10 per 70,000 words**, plus a few cents for the character
-list. Each step can be re-run safely: finished work is kept and not
-re-bought.
+A book can be a **PDF, EPUB, plain-text (.txt), or HTML** file, or a link to
+one. Budget about **$0.08 per 70,000 words** for Jev, plus under a cent for the
+character list. You'll always see the estimate before anything is spent.
 
-### C1. Find the book's HTML page
-
-On Project Gutenberg, open the book and copy the link to **"Read online
-(web)"**. It looks like
-`https://www.gutenberg.org/ebooks/69087.html.images` or
-`https://www.gutenberg.org/files/69087/69087-h/69087-h.htm`.
-**Plain-text (.txt) links do not work here.**
-
-Other websites work too if the whole book is on one page. See
-[Which websites work?](#which-websites-work) below.
-
-### C2. Ingest: download and split into passages (free)
+### Easiest: drag and drop in the browser
 
 ```bash
-uv run python -m detective_jev.cli ingest <html-url>
+uv run detective-jev serve          # opens http://127.0.0.1:8000 in your browser
 ```
 
-This prints a **book id**, such as `pg1661`. Use it in the next steps. The
-book is split into ~500-word passages that never cut a paragraph in half. To
-check what was kept, run
-`uv run python -m detective_jev.cli inspect <book_id> --chunk 1`.
+1. Open the **+ Add a book** tab and drop the file on the page, or paste a
+   link.
+2. It reads the book (free) and shows its length and estimated cost.
+3. Choose **Free dry run** (random numbers, costs nothing) or **Run it for
+   real**.
+4. Watch the four steps tick off. When they finish, press **Watch it →**.
 
-### C3. Build the character list (one LLM call, a few cents)
+Port 8000 busy? Use `uv run detective-jev serve --port 8080`.
+
+### Or: one command
 
 ```bash
-uv run python -m detective_jev.cli roster <book_id>
+uv run detective-jev run path/to/book.pdf              # asks before spending
+uv run detective-jev run path/to/book.epub --dry-run   # free rehearsal, random numbers
+uv run detective-jev run https://www.gutenberg.org/ebooks/69087.html.images --yes
 ```
 
-This sends the whole book to a language model once and writes
-`data/rosters/<book_id>.yaml`. **Open that file and check it**:
-- Fix any wrong nicknames (`aliases`).
-- Set `is_suspect: true` for the characters you'd call suspects.
-- Read the warnings the command printed. They flag possible missed or
-  merged characters.
+Both do the same four steps:
 
-Once this file exists, it is the source of truth. The model is never asked
-again for this book. You can re-check your edits with
-`uv run python -m detective_jev.cli validate <book_id>`.
+1. **Read the book.** Split it into ~500-word chunks without cutting a
+   paragraph.
+2. **Find the characters.** One language-model call through your OpenRouter
+   key. A dry run uses a free placeholder list instead.
+3. **Build the case notes.** One Jev call per chunk.
+4. **Jev reads the book.** One Jev call per chunk. Results are saved to
+   `data/results/`.
 
-### C4. Build the ledger (about $0.035 per 70k words)
+Every step is saved as it goes. Running the same book again is free and
+picks up where it stopped. A real run after a dry run replaces the
+placeholder character list automatically.
+
+### Optional: tidy the character list
+
+The character list is made automatically and saved to
+`data/rosters/<book_id>.yaml`. It is usually fine. For a careful experiment:
+- Open the file and fix any wrong nicknames (`aliases`).
+- Mark the suspects with `is_suspect: true`.
+- Check the list with `uv run detective-jev validate <book_id>`.
+
+If you change names or aliases after the case notes were built, rebuild
+them with `uv run detective-jev ledger <book_id> --real --force` (about
+$0.03). Marking suspects needs no rebuild.
+
+### Doing the steps one at a time
+
+The individual stages are still there:
 
 ```bash
-uv run python -m detective_jev.cli ledger <book_id>          # free mock version first
-uv run python -m detective_jev.cli ledger <book_id> --real   # the real one: one Jev call per passage
-```
-
-Each passage is compressed once, into Jev's answers plus one sentence it
-picks. If you later edit the character names or aliases, the command refuses
-to mix old and new entries. Rebuild with `--real --force` when that happens.
-
-### C5. Run it
-
-Same as Part B, with your book id:
-
-```bash
+uv run detective-jev ingest <file-or-url>
+uv run detective-jev roster <book_id>
+uv run detective-jev ledger <book_id> --real
 uv run python scripts/run_curve.py --book <book_id>
 ```
 
 ---
 
-## Which websites work?
+## Which files and websites work?
 
-**Any HTML page where the book's text is in normal paragraph tags (`<p>`) on a
-single page.** Project Gutenberg is the tested case. Other sites often work
-too, with these limits:
+| Format | How well | Notes |
+|---|---|---|
+| **EPUB** | Best | Chapters are read in reading order, with chapter titles. |
+| **HTML** (file or link) | Very good | The whole book must be on one page, in normal `<p>` paragraphs. Pages that load their text with JavaScript don't work, and a site with one page per chapter only gives you the page you linked. |
+| **Plain text (.txt)** | Very good | Paragraphs must be separated by blank lines, as in Project Gutenberg files. |
+| **PDF** | Good, best effort | PDFs store lines, not paragraphs, so paragraph breaks are rebuilt. Running headers, page numbers, and hyphenated line-ends are removed. Scanned PDFs (pictures of pages, no selectable text) can't be read. |
 
-- **Gutenberg extras are removed automatically.** This covers the license
-  header and footer, transcriber's notes, and the table of contents. On
-  other sites, stray menus, captions, or comments inside `<p>` tags will end
-  up in the text. Check with `cli inspect`.
-- **Chapter headings** are read from `<h1>`–`<h6>` tags. Sites that style
-  headings some other way still work, but chapters come out unnamed.
-- **One page only.** A site that puts each chapter on its own page is only
-  partly ingested: you get the one page you linked.
-- **No JavaScript-rendered sites.** The page is downloaded as-is, without
-  running scripts.
-- **Text with no `<p>` tags** (only `<br>` line breaks, or plain `.txt`)
-  finds no paragraphs and stops with "No body paragraphs found".
-- **Book ids.** Gutenberg books get `pg<number>`. Anything else gets a name
-  made from the title plus a short code based on the text. The same book
-  from two websites gets the same id.
-
-Downloaded pages are cached in `data/raw/html/`, so each URL is fetched only
-once.
+- **Project Gutenberg extras are removed automatically in every format.**
+  This covers the license, transcriber's notes, and the title page and
+  table of contents before chapter one.
+- **Advertisements for other books** at the very end are *not* removed yet.
+- **To check what was read,** run `uv run detective-jev inspect <book_id> --chunk 1`.
+- **Book ids.** Gutenberg links get `pg<number>`. Anything else gets a name
+  made from the title plus a short code based on the text.
+- **Caching.** Links are downloaded once and cached in `data/raw/html/`;
+  uploaded and local files are kept in `data/raw/uploads/`.
 
 ---
 
@@ -261,14 +257,16 @@ that case, instead of failing partway after spending money.
 |---|---|
 | `Paragraph mode can't finish this text` | Too long for paragraph mode. Use book mode (Part C). |
 | `Request too large for Jev` | One call would pass Jev's limit. In book mode this should not happen for normal novels; report it. |
-| `No body paragraphs found` | The URL isn't an HTML page with `<p>` paragraphs. Use the HTML ("Read online") link, not `.txt`. |
+| `No story text found` | The file or page has no readable paragraphs. For web pages, use the HTML edition; for PDFs, it may be a scanned (image-only) file. |
+| `Unsupported file type` | Use a PDF, EPUB, TXT, or HTML file. Word files (.docx) aren't supported; save them as PDF or TXT first. |
+| `This PDF has no text layer` | It's a scanned PDF. Find an EPUB or text edition instead. |
 | `OPENROUTER_API_KEY is not set` | Step A4. |
 | `ANTHROPIC_API_KEY is not set` | Add `EXTRACTION_PROVIDER=openrouter` to `.env` (step A4), or add an Anthropic key. |
 | `No roster at ...` | Run step C3 for that book. |
 | `Ledger for ... was built with different inputs` | The character list or questions changed since the ledger was built. Rebuild with `cli ledger <book_id> --real --force`. |
 | `suspects_only needs at least 2 characters` | Mark suspects with `is_suspect: true` in the roster YAML. |
 | The curve in the browser is flat or random | You are viewing a mock run (yellow banner), or "Mock mode" is ticked on `/live`. |
-| The viewer says "No saved runs yet" | Run step B2 (or C5) first; the viewer only replays saved results. |
+| The viewer says "No saved runs yet" | Add a book (Part C) or run step B2 first. |
 
 ---
 
@@ -279,6 +277,6 @@ that case, instead of failing partway after spending money.
 | A2 | Jev access (possible waitlist) |
 | A3 | Creating the key, paying, setting a spending limit |
 | A4 | Pasting the key into `.env` |
-| C3 | Checking the character list and marking suspects |
+| C (optional) | Checking the character list and marking suspects |
 
 Everything else is automated by the commands above.

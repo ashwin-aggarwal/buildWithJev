@@ -77,47 +77,24 @@ def _first_overflow(paragraphs: list[str], question: str, choices) -> int | None
 
 def run_book(args: argparse.Namespace) -> None:
     """Book mode: step through chunks with the ledger as history."""
-    from detective_jev import inference, storage
-    from detective_jev.ledger import load_ledger
-    from detective_jev.questions import load_inference_questions
-    from detective_jev.roster import load_roster
+    from detective_jev.pipeline import run_inference
 
-    book = storage.load_book(args.book)
-    roster = load_roster(args.book, book)
-    ledger = load_ledger(args.book, mock=args.mock)
-    questions = load_inference_questions()
-    run_id = inference.compute_run_id(ledger, questions, candidate_set=args.candidate_set,
-                                      condition=args.condition, mock=args.mock, posthoc=args.posthoc)
-    n = book["n_chunks"] if args.limit is None else min(args.limit, book["n_chunks"])
-    out_path = args.out or (config.RESULTS_DIR / f"{args.book}__{run_id}.jsonl")
-    out_path.parent.mkdir(parents=True, exist_ok=True)
+    tag = "MOCK" if args.mock else "REAL, spends credits"
+    print(f"Running book {args.book} ({tag}) candidate_set={args.candidate_set} condition={args.condition}")
 
-    done = _completed_steps(out_path)
-    if done:
-        print(f"Resuming: {len(done)} of {n} steps already logged in {out_path}")
-    print(f"Running {n} chunk steps ({'MOCK' if args.mock else 'REAL, spends credits'}) "
-          f"run_id={run_id} candidate_set={args.candidate_set} condition={args.condition} -> {out_path}")
+    def show(t, n, row):
+        cache = "cache" if row.get("cached") else ("mock" if args.mock else "live")
+        print(f"  t={t:4d}/{n}  winner={row['answer']!s:14s} conf={row['confidence']}  [{cache}]")
 
-    with out_path.open("a", encoding="utf-8") as fh:
-        for t in range(1, n + 1):
-            if t in done:
-                continue
-            try:
-                result = inference.run_step(book, ledger, roster, questions, t,
-                                            candidate_set=args.candidate_set, run_id=run_id,
-                                            mock=args.mock, posthoc=args.posthoc)
-            except JevError as exc:
-                print(f"Step t={t} failed: {exc}")
-                print("Stopping. Fix the issue and rerun — completed steps are cached/logged.")
-                raise SystemExit(1)
-            row = inference.result_row(t, result, book_id=args.book, run_id=run_id,
-                                       condition=args.condition, candidate_set=args.candidate_set)
-            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
-            fh.flush()
-            tag = "cache" if result.get("cached") else ("mock" if args.mock else "live")
-            print(f"  t={t:4d}/{n}  winner={row['answer']!s:14s} conf={row['confidence']}  [{tag}]")
-
-    print(f"Done. Results in {out_path}")
+    try:
+        out_path, run_id = run_inference(args.book, mock=args.mock, candidate_set=args.candidate_set,
+                                         condition=args.condition, posthoc=args.posthoc,
+                                         limit=args.limit, out_path=args.out, progress=show)
+    except JevError as exc:
+        print(f"Jev call failed: {exc}")
+        print("Stopping. Fix the issue and rerun — completed steps are cached/logged.")
+        raise SystemExit(1)
+    print(f"Done. run_id={run_id}. Results in {out_path}")
 
 
 def main() -> None:
