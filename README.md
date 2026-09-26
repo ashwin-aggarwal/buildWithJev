@@ -1,4 +1,4 @@
-# The Whodunit Curve
+# Predicting the Murder Mystery
 
 Feed a murder mystery to [Jev](https://openrouter.ai/typesafe/jev-1.13) one
 paragraph at a time and watch how its belief about *who the killer is* shifts
